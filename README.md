@@ -1,3 +1,3 @@
 Yoink!
 
-A simple gui for yt-dlp by Lyjia
+A simple gui for yt-dlp by Lyjia and some AI
