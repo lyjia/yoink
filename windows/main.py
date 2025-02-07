@@ -2,10 +2,11 @@ import sys
 import os
 import uuid
 from urllib.parse import urlparse
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLineEdit, QPushButton, QTableWidget,
-                             QTableWidgetItem, QFileDialog, QHeaderView, QProgressBar)
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, QThread
+                             QTableWidgetItem, QFileDialog, QHeaderView, QProgressBar,
+                             QAbstractItemView)
+from PyQt6.QtCore import Qt, QObject, QThread
 from workers import DownloadWorker
 
 class MainWindow(QMainWindow):
@@ -46,8 +47,8 @@ class MainWindow(QMainWindow):
         self.table.setHorizontalHeaderLabels([
             "URL", "Domain", "Filename", "Downloaded", "Total", "Speed", "Progress"
         ])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
         # Assemble layout
         layout.addLayout(input_layout)
@@ -96,7 +97,7 @@ class MainWindow(QMainWindow):
         # URL and domain
         domain = urlparse(url).netloc
         url_item = QTableWidgetItem(url[:50] + '...' if len(url) > 50 else url)
-        url_item.setData(Qt.UserRole, download_id)
+        url_item.setData(Qt.ItemDataRole.UserRole, download_id)
         self.table.setItem(row, 0, url_item)
         self.table.setItem(row, 1, QTableWidgetItem(domain))
 
@@ -107,27 +108,22 @@ class MainWindow(QMainWindow):
 
     def update_progress(self, download_id, progress_info):
         for row in range(self.table.rowCount()):
-            if self.table.item(row, 0).data(Qt.UserRole) == download_id:
-                # Update progress information
+            if self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) == download_id:
                 self.update_row(row, progress_info)
                 break
 
     def update_row(self, row, data):
-        # Filename
         if filename := data.get('filename'):
             self.table.item(row, 2).setText(os.path.basename(filename))
 
-        # Bytes
         downloaded = data.get('downloaded_bytes', 0)
         total = data.get('total_bytes', 0) or data.get('total_bytes_estimate', 0)
         self.table.item(row, 3).setText(self.format_bytes(downloaded))
         self.table.item(row, 4).setText(self.format_bytes(total))
 
-        # Speed
         speed = data.get('speed', 0)
         self.table.item(row, 5).setText(f"{self.format_bytes(speed)}/s")
 
-        # Progress bar
         progress = self.table.cellWidget(row, 6)
         progress.setValue(int(data.get('percent', 0)))
 
@@ -143,7 +139,7 @@ class MainWindow(QMainWindow):
 
     def download_error(self, download_id, error_msg):
         for row in range(self.table.rowCount()):
-            if self.table.item(row, 0).data(Qt.UserRole) == download_id:
+            if self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) == download_id:
                 self.table.item(row, 2).setText(f"Error: {error_msg}")
                 break
         self.cleanup_download(download_id)
@@ -159,8 +155,14 @@ class MainWindow(QMainWindow):
         selected = self.table.currentRow()
         if selected >= 0:
             item = self.table.item(selected, 0)
-            download_id = item.data(Qt.UserRole)
+            download_id = item.data(Qt.ItemDataRole.UserRole)
             if download_id in self.downloads:
                 self.downloads[download_id]['worker'].cancel()
                 self.cleanup_download(download_id)
                 self.table.removeRow(selected)
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())

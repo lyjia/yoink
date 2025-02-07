@@ -2,12 +2,11 @@ import sys
 import os
 import uuid
 from urllib.parse import urlparse
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLineEdit, QPushButton, QTableWidget,
                              QTableWidgetItem, QFileDialog, QHeaderView, QProgressBar)
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, QThread
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
 import yt_dlp
-
 
 
 class DownloadWorker(QObject):
