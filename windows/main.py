@@ -153,6 +153,8 @@ class MainWindow(QMainWindow):
         progress.setValue(int(data.get('percent', 0)))
 
     def format_bytes(self, bytes):
+        if bytes is None:
+            return "--"
         for unit in ['B', 'KB', 'MB', 'GB']:
             if bytes < 1024.0:
                 return f"{bytes:.1f} {unit}"
