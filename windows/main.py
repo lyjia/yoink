@@ -22,6 +22,12 @@ COL_PROGRESS = "Progress"
 COL_ACTIONS = "Actions"
 TABLE_COLUMNS = [COL_URL, COL_DOMAIN, COL_FILENAME, COL_DOWNLOADED, COL_TOTAL, COL_SPEED, COL_PROGRESS, COL_ACTIONS]
 
+STA_STARTING = "🏁"
+STA_RUNNING = "🏃"
+STA_FINISHED = "✔️"
+STA_ERROR = "❌"
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -139,7 +145,7 @@ class MainWindow(QMainWindow):
         self.table.setCellWidget(row, 6, QProgressBar())
 
         # Add 'X' button in the Actions column
-        cancel_button = QPushButton("X")
+        cancel_button = QPushButton("✖")
         cancel_button.setFixedSize(20, 20)
         cancel_button.clicked.connect(lambda checked, did=download_id: self.handle_cancel(did))
         self.table.setCellWidget(row, 7, cancel_button)
