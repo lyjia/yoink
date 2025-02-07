@@ -11,10 +11,21 @@ from PyQt6.QtCore import Qt, QObject, QThread, QSettings
 from const import SETTINGS_LAST_DOWNLOAD_FOLDER
 from workers import DownloadWorker
 
+
+COL_URL = "URL"
+COL_DOMAIN = "Domain"
+COL_FILENAME = "Filename"
+COL_DOWNLOADED = "Downloaded"
+COL_TOTAL = "Total"
+COL_SPEED = "Speed"
+COL_PROGRESS = "Progress"
+COL_ACTIONS = "Actions"
+TABLE_COLUMNS = [COL_URL, COL_DOMAIN, COL_FILENAME, COL_DOWNLOADED, COL_TOTAL, COL_SPEED, COL_PROGRESS, COL_ACTIONS]
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("yt-dlp GUI")
+        self.setWindowTitle("Yoink! A yt-dlp GUI")
         self.setGeometry(100, 100, 1024, 600)
         self.settings = QSettings("settings.json")
 
@@ -45,10 +56,8 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(self.start_btn)
 
         # Downloads table
-        self.table = QTableWidget(0, 8)
-        self.table.setHorizontalHeaderLabels([
-            "URL", "Domain", "Filename", "Downloaded", "Total", "Speed", "Progress", "Actions"
-        ])
+        self.table = QTableWidget(0, len(TABLE_COLUMNS))
+        self.table.setHorizontalHeaderLabels(TABLE_COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
