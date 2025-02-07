@@ -5,13 +5,14 @@ from urllib.parse import urlparse
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLineEdit, QPushButton, QTableWidget,
                              QTableWidgetItem, QFileDialog, QHeaderView, QProgressBar,
-                             QAbstractItemView, QMessageBox)
+                             QAbstractItemView, QMessageBox, QMenu)
 from PyQt6.QtCore import Qt, QObject, QThread, QSettings
 
 from const import SETTINGS_LAST_DOWNLOAD_FOLDER
 from workers import DownloadWorker
 
 
+COL_STATUS = "Status"
 COL_URL = "URL"
 COL_DOMAIN = "Domain"
 COL_FILENAME = "Filename"
@@ -20,7 +21,7 @@ COL_TOTAL = "Total"
 COL_SPEED = "Speed"
 COL_PROGRESS = "Progress"
 COL_ACTIONS = "Actions"
-TABLE_COLUMNS = [COL_URL, COL_DOMAIN, COL_FILENAME, COL_DOWNLOADED, COL_TOTAL, COL_SPEED, COL_PROGRESS, COL_ACTIONS]
+TABLE_COLUMNS = [COL_STATUS, COL_URL, COL_DOMAIN, COL_FILENAME, COL_DOWNLOADED, COL_TOTAL, COL_SPEED, COL_PROGRESS, COL_ACTIONS]
 
 STA_STARTING = "🏁"
 STA_RUNNING = "🏃"
@@ -67,14 +68,31 @@ class MainWindow(QMainWindow):
         # Downloads table
         self.table = QTableWidget(0, len(TABLE_COLUMNS))
         self.table.setHorizontalHeaderLabels(TABLE_COLUMNS)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Status column
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)  # Actions column
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
+        # Menu bar
+        menu_bar = self.menuBar()
+        file_menu = menu_bar.addMenu("File")
+        about_action = file_menu.addAction("About")
+        options_action = file_menu.addAction("Options")
+        exit_action = file_menu.addAction("Exit")
+        exit_action.triggered.connect(self.close)
+        about_action.triggered.connect(self.show_about)
+        options_action.triggered.connect(self.show_options)
+
         # Assemble layout
-
-
         layout.addLayout(input_layout)
         layout.addWidget(self.table)
+
+    def show_about(self):
+        QMessageBox.information(self, "About", "Yoink! A yt-dlp GUI\nVersion 1.0")
+
+    def show_options(self):
+        QMessageBox.information(self, "Options", "Options dialog placeholder")
 
     def browse_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Download Directory")
@@ -86,16 +104,12 @@ class MainWindow(QMainWindow):
         directory = self.dir_input.text().strip()
 
         if not url or not directory:
-            title = "Invalid input"
-            text = "Please ensure both the URL and directory are valid."
-            self.popup_warning_box(text, title)
-            return  # Add error handling
+            self.popup_warning_box("Please ensure both the URL and directory are valid.", "Invalid input")
+            return
 
         if not os.path.isdir(directory):
-            title = "Invalid input"
-            text = "Given directory does not exist or is not a valid directory."
-            self.popup_warning_box(text, title)
-            return  # Add error handling for invalid directory
+            self.popup_warning_box("Given directory does not exist or is not valid.", "Invalid input")
+            return
 
         download_id = str(uuid.uuid4())
         self.add_table_row(download_id, url)
@@ -110,6 +124,7 @@ class MainWindow(QMainWindow):
         worker.finished.connect(self.download_finished)
         worker.error_occurred.connect(self.download_error)
         thread.started.connect(worker.run)
+        thread.started.connect(lambda: self.update_status(download_id, STA_RUNNING))
 
         # Store references
         self.downloads[download_id] = {
@@ -121,54 +136,63 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def popup_warning_box(self, text, title):
-        message_box = QMessageBox(self)
-        message_box.setIcon(QMessageBox.Icon.Warning)
-        message_box.setWindowTitle(title)
-        message_box.setText(text)
-        message_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        message_box.exec()
+        QMessageBox.warning(self, title, text)
 
     def add_table_row(self, download_id, url):
         row = self.table.rowCount()
         self.table.insertRow(row)
 
+        # Status column
+        status_item = QTableWidgetItem(STA_STARTING)
+        self.table.setItem(row, 0, status_item)
+
         # URL and domain
         domain = urlparse(url).netloc
         url_item = QTableWidgetItem(url[:50] + '...' if len(url) > 50 else url)
         url_item.setData(Qt.ItemDataRole.UserRole, download_id)
-        self.table.setItem(row, 0, url_item)
-        self.table.setItem(row, 1, QTableWidgetItem(domain))
+        self.table.setItem(row, 1, url_item)
+        self.table.setItem(row, 2, QTableWidgetItem(domain))
 
         # Initialize other columns
-        for col in range(2, 6):
+        for col in range(3, 7):
             self.table.setItem(row, col, QTableWidgetItem(""))
-        self.table.setCellWidget(row, 6, QProgressBar())
 
-        # Add 'X' button in the Actions column
+        # Progress bar
+        progress_bar = QProgressBar()
+        self.table.setCellWidget(row, 7, progress_bar)
+
+        # Cancel button
         cancel_button = QPushButton("✖")
         cancel_button.setFixedSize(20, 20)
         cancel_button.clicked.connect(lambda checked, did=download_id: self.handle_cancel(did))
-        self.table.setCellWidget(row, 7, cancel_button)
+        self.table.setCellWidget(row, 8, cancel_button)
+
+    def update_status(self, download_id, status):
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 1)
+            if item.data(Qt.ItemDataRole.UserRole) == download_id:
+                self.table.item(row, 0).setText(status)
+                break
 
     def update_progress(self, download_id, progress_info):
         for row in range(self.table.rowCount()):
-            if self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) == download_id:
+            if self.table.item(row, 1).data(Qt.ItemDataRole.UserRole) == download_id:
                 self.update_row(row, progress_info)
                 break
 
     def update_row(self, row, data):
         if filename := data.get('filename'):
-            self.table.item(row, 2).setText(os.path.basename(filename))
+            self.table.item(row, 3).setText(os.path.basename(filename))
 
         downloaded = data.get('downloaded_bytes', 0)
         total = data.get('total_bytes', 0) or data.get('total_bytes_estimate', 0)
-        self.table.item(row, 3).setText(self.format_bytes(downloaded))
-        self.table.item(row, 4).setText(self.format_bytes(total))
+        self.table.item(row, 4).setText(self.format_bytes(downloaded))
+        self.table.item(row, 5).setText(self.format_bytes(total))
 
         speed = data.get('speed', 0)
-        self.table.item(row, 5).setText(f"{self.format_bytes(speed)}/s")
+        self.table.item(row, 6).setText(f"{self.format_bytes(speed)}/s")
 
-        progress = self.table.cellWidget(row, 6)
+        progress = self.table.cellWidget(row, 7)
         progress.setValue(int(data.get('percent', 0)))
 
     def format_bytes(self, bytes):
@@ -181,12 +205,15 @@ class MainWindow(QMainWindow):
         return f"{bytes:.1f} TB"
 
     def download_finished(self, download_id):
+        self.update_status(download_id, STA_FINISHED)
         self.cleanup_download(download_id)
 
     def download_error(self, download_id, error_msg):
         for row in range(self.table.rowCount()):
-            if self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) == download_id:
-                self.table.item(row, 2).setText(f"Error: {error_msg}")
+            item = self.table.item(row, 1)
+            if item.data(Qt.ItemDataRole.UserRole) == download_id:
+                self.table.item(row, 0).setText(STA_ERROR)
+                self.table.item(row, 3).setText(f"Error: {error_msg}")
                 break
         self.cleanup_download(download_id)
 
@@ -198,14 +225,18 @@ class MainWindow(QMainWindow):
             del self.downloads[download_id]
 
     def handle_cancel(self, download_id):
-        # Find the row with the given download_id
         for row in range(self.table.rowCount()):
-            item = self.table.item(row, 0)
+            item = self.table.item(row, 1)
             if item.data(Qt.ItemDataRole.UserRole) == download_id:
-                # Cancel the download if it's active
                 if download_id in self.downloads:
                     self.downloads[download_id]['worker'].cancel()
                     self.cleanup_download(download_id)
-                # Remove the row from the table
                 self.table.removeRow(row)
                 break
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
