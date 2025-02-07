@@ -5,8 +5,10 @@ from urllib.parse import urlparse
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLineEdit, QPushButton, QTableWidget,
                              QTableWidgetItem, QFileDialog, QHeaderView, QProgressBar,
-                             QAbstractItemView)
-from PyQt6.QtCore import Qt, QObject, QThread
+                             QAbstractItemView, QMessageBox)
+from PyQt6.QtCore import Qt, QObject, QThread, QSettings
+
+from const import SETTINGS_LAST_DOWNLOAD_FOLDER
 from workers import DownloadWorker
 
 class MainWindow(QMainWindow):
@@ -14,6 +16,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("yt-dlp GUI")
         self.setGeometry(100, 100, 1024, 600)
+        self.settings = QSettings("settings.json")
 
         # Download tracking
         self.downloads = {}  # {download_id: {'worker': worker, 'thread': thread}}
@@ -27,6 +30,8 @@ class MainWindow(QMainWindow):
         input_layout = QHBoxLayout()
         self.url_input = QLineEdit(placeholderText="Enter URL")
         self.dir_input = QLineEdit(placeholderText="Download directory")
+        self.dir_input.setText(self.settings.value(SETTINGS_LAST_DOWNLOAD_FOLDER))
+
         self.browse_btn = QPushButton("Browse")
         self.browse_btn.clicked.connect(self.browse_directory)
         input_layout.addWidget(self.url_input)
@@ -37,15 +42,12 @@ class MainWindow(QMainWindow):
         btn_layout = QHBoxLayout()
         self.start_btn = QPushButton("Start Download")
         self.start_btn.clicked.connect(self.start_download)
-        self.cancel_btn = QPushButton("Cancel Selected")
-        self.cancel_btn.clicked.connect(self.cancel_download)
         btn_layout.addWidget(self.start_btn)
-        btn_layout.addWidget(self.cancel_btn)
 
         # Downloads table
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels([
-            "URL", "Domain", "Filename", "Downloaded", "Total", "Speed", "Progress"
+            "URL", "Domain", "Filename", "Downloaded", "Total", "Speed", "Progress", "Actions"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -65,7 +67,16 @@ class MainWindow(QMainWindow):
         directory = self.dir_input.text().strip()
 
         if not url or not directory:
+            title = "Invalid input"
+            text = "Please ensure both the URL and directory are valid."
+            self.popup_warning_box(text, title)
             return  # Add error handling
+
+        if not os.path.isdir(directory):
+            title = "Invalid input"
+            text = "Given directory does not exist or is not a valid directory."
+            self.popup_warning_box(text, title)
+            return  # Add error handling for invalid directory
 
         download_id = str(uuid.uuid4())
         self.add_table_row(download_id, url)
@@ -90,6 +101,14 @@ class MainWindow(QMainWindow):
 
         thread.start()
 
+    def popup_warning_box(self, text, title):
+        message_box = QMessageBox(self)
+        message_box.setIcon(QMessageBox.Icon.Warning)
+        message_box.setWindowTitle(title)
+        message_box.setText(text)
+        message_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        message_box.exec()
+
     def add_table_row(self, download_id, url):
         row = self.table.rowCount()
         self.table.insertRow(row)
@@ -105,6 +124,12 @@ class MainWindow(QMainWindow):
         for col in range(2, 6):
             self.table.setItem(row, col, QTableWidgetItem(""))
         self.table.setCellWidget(row, 6, QProgressBar())
+
+        # Add 'X' button in the Actions column
+        cancel_button = QPushButton("X")
+        cancel_button.setFixedSize(20, 20)
+        cancel_button.clicked.connect(lambda checked, did=download_id: self.handle_cancel(did))
+        self.table.setCellWidget(row, 7, cancel_button)
 
     def update_progress(self, download_id, progress_info):
         for row in range(self.table.rowCount()):
@@ -151,18 +176,15 @@ class MainWindow(QMainWindow):
             thread.wait()
             del self.downloads[download_id]
 
-    def cancel_download(self):
-        selected = self.table.currentRow()
-        if selected >= 0:
-            item = self.table.item(selected, 0)
-            download_id = item.data(Qt.ItemDataRole.UserRole)
-            if download_id in self.downloads:
-                self.downloads[download_id]['worker'].cancel()
-                self.cleanup_download(download_id)
-                self.table.removeRow(selected)
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    def handle_cancel(self, download_id):
+        # Find the row with the given download_id
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item.data(Qt.ItemDataRole.UserRole) == download_id:
+                # Cancel the download if it's active
+                if download_id in self.downloads:
+                    self.downloads[download_id]['worker'].cancel()
+                    self.cleanup_download(download_id)
+                # Remove the row from the table
+                self.table.removeRow(row)
+                break
