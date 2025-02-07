@@ -39,21 +39,24 @@ class MainWindow(QMainWindow):
 
         # Input fields
         input_layout = QHBoxLayout()
+        input_sub_layout = QVBoxLayout()
         self.url_input = QLineEdit(placeholderText="Enter URL")
+        input_sub_layout.addWidget(self.url_input)
+
+        input_sub_dir_layout = QHBoxLayout()
         self.dir_input = QLineEdit(placeholderText="Download directory")
         self.dir_input.setText(self.settings.value(SETTINGS_LAST_DOWNLOAD_FOLDER))
-
         self.browse_btn = QPushButton("Browse")
         self.browse_btn.clicked.connect(self.browse_directory)
-        input_layout.addWidget(self.url_input)
-        input_layout.addWidget(self.dir_input)
-        input_layout.addWidget(self.browse_btn)
+        input_sub_dir_layout.addWidget(self.dir_input)
+        input_sub_dir_layout.addWidget(self.browse_btn)
+        input_sub_layout.addLayout(input_sub_dir_layout)
+        input_layout.addLayout(input_sub_layout)
 
         # Control buttons
-        btn_layout = QHBoxLayout()
         self.start_btn = QPushButton("Start Download")
         self.start_btn.clicked.connect(self.start_download)
-        btn_layout.addWidget(self.start_btn)
+        input_layout.addWidget(self.start_btn)
 
         # Downloads table
         self.table = QTableWidget(0, len(TABLE_COLUMNS))
@@ -62,8 +65,9 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
         # Assemble layout
+
+
         layout.addLayout(input_layout)
-        layout.addLayout(btn_layout)
         layout.addWidget(self.table)
 
     def browse_directory(self):
