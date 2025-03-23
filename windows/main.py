@@ -13,7 +13,7 @@ from workers import DownloadWorker
 
 
 COL_STATUS = "Status"
-COL_URL = "URL"
+COL_URL = "Name"
 COL_DOMAIN = "Domain"
 COL_FILENAME = "Filename"
 COL_DOWNLOADED = "Downloaded"
