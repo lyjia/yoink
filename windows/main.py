@@ -5,11 +5,16 @@ from urllib.parse import urlparse
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLineEdit, QPushButton, QTableWidget,
                              QTableWidgetItem, QFileDialog, QHeaderView, QProgressBar,
-                             QAbstractItemView, QMessageBox, QMenu)
+                             QAbstractItemView, QMessageBox, QMenu, QComboBox) # Added QComboBox
 from PyQt6.QtCore import Qt, QObject, QThread, QSettings
+import logging # Added logging
 
-from const import SETTINGS_LAST_DOWNLOAD_FOLDER
-from workers import DownloadWorker
+# Import the manager function to find versions
+from ytdlp_manager import find_available_versions, DEFAULT_DOWNLOAD_BASE_DIR
+from const import SETTINGS_LAST_DOWNLOAD_FOLDER, SETTINGS_APP_ORG, SETTINGS_APP_NAME # Ensure these are imported if needed elsewhere
+
+# Define a setting key for the yt-dlp version
+SETTINGS_YTDLP_VERSION = "ytdlp_version"
 
 
 COL_STATUS = "Status"
@@ -34,7 +39,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Yoink! A yt-dlp GUI")
         self.setGeometry(100, 100, 1024, 600)
-        self.settings = QSettings("settings.json")
+        # Use standard settings location for better cross-platform compatibility
+        self.settings = QSettings(SETTINGS_APP_ORG, SETTINGS_APP_NAME)
+        logging.info(f"Settings file location: {self.settings.fileName()}")
+
 
         # Download tracking
         self.downloads = {}  # {download_id: {'worker': worker, 'thread': thread}}
@@ -58,12 +66,28 @@ class MainWindow(QMainWindow):
         input_sub_dir_layout.addWidget(self.dir_input)
         input_sub_dir_layout.addWidget(self.browse_btn)
         input_sub_layout.addLayout(input_sub_dir_layout)
+
+        # --- yt-dlp Version Selector ---
+        version_layout = QHBoxLayout()
+        self.version_label = QLabel("yt-dlp Version:") # Add QLabel import if needed
+        self.version_selector = QComboBox()
+        self.populate_version_selector() # Populate the dropdown
+        # Load last used version or default to "latest"
+        last_version = self.settings.value(SETTINGS_YTDLP_VERSION, "latest")
+        self.version_selector.setCurrentText(last_version)
+        version_layout.addWidget(self.version_label)
+        version_layout.addWidget(self.version_selector)
+        input_sub_layout.addLayout(version_layout)
+        # --- End Version Selector ---
+
         input_layout.addLayout(input_sub_layout)
+
 
         # Control buttons
         self.start_btn = QPushButton("Start Download")
         self.start_btn.clicked.connect(self.start_download)
         input_layout.addWidget(self.start_btn)
+
 
         # Downloads table
         self.table = QTableWidget(0, len(TABLE_COLUMNS))
@@ -76,6 +100,7 @@ class MainWindow(QMainWindow):
 
         # Menu bar
         menu_bar = self.menuBar()
+        menu_bar.setNativeMenuBar(False)
         file_menu = menu_bar.addMenu("File")
         about_action = file_menu.addAction("About")
         options_action = file_menu.addAction("Options")
@@ -88,11 +113,43 @@ class MainWindow(QMainWindow):
         layout.addLayout(input_layout)
         layout.addWidget(self.table)
 
+    def populate_version_selector(self):
+        """Populates the version selector dropdown."""
+        current_selection = self.version_selector.currentText() # Save current selection
+        self.version_selector.clear()
+        self.version_selector.addItem("latest") # Always offer latest
+
+        try:
+            # Use the manager function to find locally cached versions
+            cached_versions = find_available_versions()
+            logging.info(f"Found cached yt-dlp versions: {cached_versions}")
+            # Add cached versions, ensuring no duplicates with "latest" if it resolves to one
+            for version in sorted(cached_versions, reverse=True):
+                 if self.version_selector.findText(version) == -1: # Avoid duplicates
+                     self.version_selector.addItem(version)
+        except Exception as e:
+            logging.error(f"Error finding cached yt-dlp versions: {e}")
+            # Optionally inform the user via status bar or dialog
+
+        # Restore previous selection if still available, otherwise default to latest
+        if self.version_selector.findText(current_selection) != -1:
+             self.version_selector.setCurrentText(current_selection)
+        else:
+             self.version_selector.setCurrentText("latest")
+
+
     def show_about(self):
         QMessageBox.information(self, "About", "Yoink! A yt-dlp GUI\nVersion 1.0")
 
     def show_options(self):
-        QMessageBox.information(self, "Options", "Options dialog placeholder")
+        # TODO: Implement a proper options dialog
+        # Could include:
+        # - Default download directory
+        # - yt-dlp version management (select default, clear cache)
+        # - API URL configuration?
+        # - Option to refresh version list
+        self.populate_version_selector() # Refresh list when opening options for now
+        QMessageBox.information(self, "Options", "Options dialog placeholder.\nVersion list refreshed.")
 
     def browse_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Download Directory")
@@ -114,8 +171,12 @@ class MainWindow(QMainWindow):
         download_id = str(uuid.uuid4())
         self.add_table_row(download_id, url)
 
-        # Setup worker thread
-        worker = DownloadWorker(url, directory, download_id)
+        # Get selected yt-dlp version
+        selected_version = self.version_selector.currentText()
+        logging.info(f"Starting download for {url} using yt-dlp version: {selected_version}")
+
+        # Setup worker thread with selected version
+        worker = DownloadWorker(url, directory, download_id, ytdlp_version=selected_version)
         thread = QThread()
         worker.moveToThread(thread)
 
@@ -234,9 +295,35 @@ class MainWindow(QMainWindow):
                 self.table.removeRow(row)
                 break
 
+    def closeEvent(self, event):
+        """Handle window close event."""
+        # Save settings
+        last_dir = self.dir_input.text().strip()
+        if last_dir:
+            self.settings.setValue(SETTINGS_LAST_DOWNLOAD_FOLDER, last_dir)
+
+        last_version = self.version_selector.currentText()
+        if last_version:
+            self.settings.setValue(SETTINGS_YTDLP_VERSION, last_version)
+
+        # Ensure all download threads are stopped (basic cleanup)
+        active_downloads = list(self.downloads.keys()) # Copy keys as dict changes size
+        for download_id in active_downloads:
+             logging.info(f"Stopping download {download_id} due to application close.")
+             self.handle_cancel(download_id) # Attempt graceful cancellation
+
+        logging.info("Application closing.")
+        super().closeEvent(event)
+
 
 if __name__ == "__main__":
+    # Configure basic logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     app = QApplication(sys.argv)
+    # Settings are now handled inside MainWindow using QSettings standard paths
+    # app.setOrganizationName(SETTINGS_APP_ORG) # No longer needed here
+    # app.setApplicationName(SETTINGS_APP_NAME) # No longer needed here
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
