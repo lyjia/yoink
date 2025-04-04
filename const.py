@@ -1,4 +1,5 @@
-SETTINGS_APP_NAME = "Yoink!"
+SETTINGS_APP_NAME = "Yoink"
 SETTINGS_APP_ORG = "Lyjia"
 
 SETTINGS_LAST_DOWNLOAD_FOLDER = "Last Download Folder"
+SETTINGS_YTDLP_VERSION = "ytdlp_version"

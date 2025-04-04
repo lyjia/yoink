@@ -5,16 +5,16 @@ from urllib.parse import urlparse
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLineEdit, QPushButton, QTableWidget,
                              QTableWidgetItem, QFileDialog, QHeaderView, QProgressBar,
-                             QAbstractItemView, QMessageBox, QMenu, QComboBox) # Added QComboBox
+                             QAbstractItemView, QMessageBox, QMenu, QComboBox, QLabel)  # Added QComboBox
 from PyQt6.QtCore import Qt, QObject, QThread, QSettings
 import logging # Added logging
 
+from workers import DownloadWorker
 # Import the manager function to find versions
 from ytdlp_manager import find_available_versions, DEFAULT_DOWNLOAD_BASE_DIR
-from const import SETTINGS_LAST_DOWNLOAD_FOLDER, SETTINGS_APP_ORG, SETTINGS_APP_NAME # Ensure these are imported if needed elsewhere
+from const import SETTINGS_LAST_DOWNLOAD_FOLDER, SETTINGS_APP_ORG, SETTINGS_APP_NAME, \
+    SETTINGS_YTDLP_VERSION  # Ensure these are imported if needed elsewhere
 
-# Define a setting key for the yt-dlp version
-SETTINGS_YTDLP_VERSION = "ytdlp_version"
 
 
 COL_STATUS = "Status"
@@ -39,7 +39,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Yoink! A yt-dlp GUI")
         self.setGeometry(100, 100, 1024, 600)
-        # Use standard settings location for better cross-platform compatibility
         self.settings = QSettings(SETTINGS_APP_ORG, SETTINGS_APP_NAME)
         logging.info(f"Settings file location: {self.settings.fileName()}")
 
