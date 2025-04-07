@@ -3,11 +3,14 @@ import sys
 import subprocess
 from pathlib import Path
 
-SETTINGS_APP_NAME = "Yoink!"
+SETTINGS_APP_NAME = "Yoink"
 SETTINGS_APP_ORG = "Lyjia"
 
 SETTINGS_LAST_DOWNLOAD_FOLDER = "Last Download Folder"
 SETTINGS_YTDLP_VERSION = "ytdlp_version"
+
+APP_NAME = f"{SETTINGS_APP_NAME}!"
+APP_DESC = "A yt-dlp GUI"
 
 # --- Dynamic Configuration ---
 PROJ_ROOT = Path(__file__).parent

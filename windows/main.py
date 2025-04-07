@@ -13,7 +13,7 @@ from workers import DownloadWorker
 # Import the manager function to find versions
 from ytdlp_manager import find_available_versions, DEFAULT_DOWNLOAD_BASE_DIR
 from const import SETTINGS_LAST_DOWNLOAD_FOLDER, SETTINGS_APP_ORG, SETTINGS_APP_NAME, \
-    SETTINGS_YTDLP_VERSION  # Ensure these are imported if needed elsewhere
+    SETTINGS_YTDLP_VERSION, GIT_VERSION, APP_NAME, APP_DESC  # Ensure these are imported if needed elsewhere
 
 
 
@@ -37,7 +37,7 @@ STA_ERROR = "❌"
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Yoink! A yt-dlp GUI")
+        self.setWindowTitle(f"{APP_NAME} {APP_DESC} v{GIT_VERSION}")
         self.setGeometry(100, 100, 1024, 600)
         self.settings = QSettings(SETTINGS_APP_ORG, SETTINGS_APP_NAME)
         logging.info(f"Settings file location: {self.settings.fileName()}")
