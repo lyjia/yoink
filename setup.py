@@ -362,9 +362,11 @@ try:
         if not source_url:
             raise RuntimeError(f"Failed to get yt-dlp source URL (tag: {tag_name}).")
         logging.info(f"Using source URL for tag {tag_name}: {source_url}")
+        archive_name = f"{Path(source_url).name}.tar.gz"
+        logging.info(f"Resolved source URL filename: {archive_name}")
 
         # 2. Download (using imported function)
-        archive_name = Path(source_url).name
+
         archive_path = tmp_path / archive_name
         if not ytdlp_manager.download_release(source_url, archive_path):
             raise RuntimeError("Failed to download yt-dlp source archive.")
@@ -469,7 +471,7 @@ if sys.platform == "win32":
         with open(main_script, "r", encoding="utf-8") as f:
             # Simple check for common GUI libraries
             content = f.read(2048)  # Read first 2KB
-            gui_libs = ["PyQt5", "PySide2", "tkinter", "kivy", "wx", "dearpygui"]
+            gui_libs = ["PyQt6", "PySide6", "tkinter", "kivy", "wx", "dearpygui"]
             if any(lib in content for lib in gui_libs):
                 base = "Win32GUI"  # Use "Win32GUI" for GUI apps on Windows
                 logging.info(f"Detected GUI library usage in {main_script}.")
