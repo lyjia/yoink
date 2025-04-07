@@ -13,32 +13,10 @@ from cx_Freeze import setup, Executable
 # Import necessary functions from our manager module
 try:
     import ytdlp_manager
+    from const import GIT_VERSION, SETTINGS_APP_NAME
 except ImportError:
-    logging.error("Failed to import ytdlp_manager. Ensure it's in the Python path.")
+    logging.error("Failed to import local modules. Ensure they are in the Python path!")
     sys.exit(1)
-
-
-# --- Configuration ---
-PROJ_ROOT = Path(__file__).parent
-try:
-    # Use stderr=subprocess.PIPE to suppress git errors if not a repo
-    GIT_VERSION = (
-        subprocess.check_output(
-            ["git", "describe", "--tags"], cwd=PROJ_ROOT, stderr=subprocess.PIPE
-        )
-        .decode("ascii")
-        .strip()
-    )
-except subprocess.CalledProcessError:
-    GIT_VERSION = "0.0+unknown"  # Fallback if not in git repo or git failed
-    logging.warning(
-        "Could not determine git version using 'git describe --tags'. Using fallback."
-    )
-except FileNotFoundError:
-    GIT_VERSION = "0.0+unknown"  # Fallback if git is not installed
-    logging.warning(
-        "git command not found. Could not determine git version. Using fallback."
-    )
 
 
 LOG_LEVEL = logging.INFO  # Set to logging.DEBUG for more verbose output during build
@@ -50,6 +28,7 @@ logging.basicConfig(
 )
 
 # --- Helper Functions for Dependency Discovery (AST Parsing part remains here) ---
+logging.info(f"====== Init setup for {SETTINGS_APP_NAME} v{GIT_VERSION} ======")
 
 
 def find_ytdlp_package_dir(base_extract_path):
@@ -510,7 +489,7 @@ executables = [
 
 logging.info("--- Running cx_Freeze setup ---")
 setup(
-    name="Yoink!",
+    name=SETTINGS_APP_NAME,
     version=GIT_VERSION,
     description="A GUI frontend for yt-dlp",
     options={"build_exe": build_options},
