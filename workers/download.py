@@ -2,12 +2,14 @@ import os
 from PyQt6.QtCore import pyqtSignal, QObject
 # import yt_dlp # Removed static import
 import logging
-from util.ytdlp_manager import get_ytdlp_module # Import the manager function
 
+from util.const import STA_RUNNING
+from util.ytdlp_manager import get_ytdlp_module # Import the manager function
 
 class DownloadWorker(QObject):
     progress_updated = pyqtSignal(str, dict)  # download_id, progress_info
     finished = pyqtSignal(str)                # download_id
+    started_running = pyqtSignal(str)
     error_occurred = pyqtSignal(str, str)     # download_id, error_msg
 
     def __init__(self, url, dest_dir, download_id, ytdlp_version="latest"):
@@ -18,6 +20,7 @@ class DownloadWorker(QObject):
         self.ytdlp_version = ytdlp_version # Allow specifying version
         self._cancelled = False
         self.ytdlp = None # Placeholder for the loaded module
+        self.accumulated_bytes = 0  # Track total downloaded bytes
 
     def run(self):
         # --- Load yt-dlp module ---
@@ -45,7 +48,7 @@ class DownloadWorker(QObject):
                 ydl.download([self.url])
             if not self._cancelled:
                 self.finished.emit(self.download_id)
-        except self.ytdlp.utils.DownloadError as e: # Catch specific yt-dlp errors if needed
+        except self.ytdlp.DownloadError as e: # Catch specific yt-dlp errors if needed
              if not self._cancelled:
                  # Try to provide a cleaner error message
                  error_msg = f"Download Error: {e.msg}" if hasattr(e, 'msg') else str(e)
@@ -65,19 +68,33 @@ class DownloadWorker(QObject):
 
     def progress_hook(self, d):
         if self._cancelled:
-            # Ensure DownloadCancelled is available before raising
             if self.ytdlp and hasattr(self.ytdlp, 'DownloadCancelled'):
                 raise self.ytdlp.DownloadCancelled('Download cancelled by user')
             else:
-                # Fallback if ytdlp module wasn't loaded or doesn't have the exception
                 raise Exception('Download cancelled by user (yt-dlp module unavailable)')
-        # Only emit progress if the download is actually running
+        
         if d['status'] == 'downloading':
-             self.progress_updated.emit(self.download_id, d)
+            # Update accumulated bytes and total
+            self.accumulated_bytes += d.get('downloaded_bytes', 0)
+            progress_data = {
+                'status': 'downloading',
+                'total_bytes': d.get('total_bytes') or self.accumulated_bytes,
+                'downloaded_bytes': self.accumulated_bytes,
+                'speed': d.get('speed', 0),
+                'percent': d.get('percent', 0)
+            }
+            self.progress_updated.emit(self.download_id, progress_data)
+            # Update status to running on first progress update
+            if self.accumulated_bytes == d.get('downloaded_bytes', 0):
+                self.started_running.emit(self.download_id)
         elif d['status'] == 'finished':
-             # Optionally emit a final 100% progress update here if needed
-             # self.progress_updated.emit(self.download_id, {'status': 'finished', 'total_bytes': d.get('total_bytes'), 'downloaded_bytes': d.get('downloaded_bytes')})
-             logging.info(f"Worker {self.download_id}: yt-dlp reported status 'finished'.")
+            self.progress_updated.emit(self.download_id, {
+                'status': 'finished',
+                'percent': 100,
+                'total_bytes': self.accumulated_bytes,
+                'downloaded_bytes': self.accumulated_bytes
+            })
+            logging.info(f"Worker {self.download_id}: yt-dlp reported status 'finished'.")
 
 
     def cancel(self):

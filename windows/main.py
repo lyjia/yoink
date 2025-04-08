@@ -13,7 +13,8 @@ from workers import DownloadWorker
 # Import the manager function to find versions
 from util.ytdlp_manager import find_available_versions
 from util.const import SETTINGS_LAST_DOWNLOAD_FOLDER, SETTINGS_APP_ORG, SETTINGS_APP_NAME, \
-    SETTINGS_YTDLP_VERSION, GIT_VERSION, APP_NAME, APP_DESC  # Ensure these are imported if needed elsewhere
+    SETTINGS_YTDLP_VERSION, GIT_VERSION, APP_NAME, APP_DESC, \
+    STA_STARTING, STA_ERROR, STA_FINISHED, STA_RUNNING  # Ensure these are imported if needed elsewhere
 
 
 
@@ -27,11 +28,6 @@ COL_SPEED = "Speed"
 COL_PROGRESS = "Progress"
 COL_ACTIONS = "Actions"
 TABLE_COLUMNS = [COL_STATUS, COL_URL, COL_DOMAIN, COL_FILENAME, COL_DOWNLOADED, COL_TOTAL, COL_SPEED, COL_PROGRESS, COL_ACTIONS]
-
-STA_STARTING = "🏁"
-STA_RUNNING = "🏃"
-STA_FINISHED = "✔️"
-STA_ERROR = "❌"
 
 
 class MainWindow(QMainWindow):
@@ -183,8 +179,9 @@ class MainWindow(QMainWindow):
         worker.progress_updated.connect(self.update_progress)
         worker.finished.connect(self.download_finished)
         worker.error_occurred.connect(self.download_error)
+        worker.started_running.connect(self.started_running)
         thread.started.connect(worker.run)
-        thread.started.connect(lambda: self.update_status(download_id, STA_RUNNING))
+        # Status update moved to first progress callback
 
         # Store references
         self.downloads[download_id] = {
@@ -240,6 +237,9 @@ class MainWindow(QMainWindow):
                 self.update_row(row, progress_info)
                 break
 
+    def started_running(self, download_id):
+        self.update_status(download_id, STA_RUNNING)
+
     def update_row(self, row, data):
         if filename := data.get('filename'):
             self.table.item(row, 3).setText(os.path.basename(filename))
@@ -266,6 +266,14 @@ class MainWindow(QMainWindow):
 
     def download_finished(self, download_id):
         self.update_status(download_id, STA_FINISHED)
+        # Clear progress and speed
+        for row in range(self.table.rowCount()):
+            if self.table.item(row, 1).data(Qt.ItemDataRole.UserRole) == download_id:
+                self.table.item(row, 6).setText("")  # Speed column
+                self.table.item(row, 4).setText("")  # Downloaded column
+                self.table.item(row, 5).setText("")  # Total column
+                progress_bar = self.table.cellWidget(row, 7)
+                progress_bar.setValue(100)  # Ensure full progress
         self.cleanup_download(download_id)
 
     def download_error(self, download_id, error_msg):

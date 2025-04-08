@@ -12,6 +12,11 @@ SETTINGS_YTDLP_VERSION = "ytdlp_version"
 APP_NAME = f"{SETTINGS_APP_NAME}!"
 APP_DESC = "A yt-dlp GUI"
 
+STA_STARTING = "🏁"
+STA_RUNNING = "🏃"
+STA_FINISHED = "✔️"
+STA_ERROR = "❌"
+
 # --- Dynamic Configuration ---
 PROJ_ROOT = Path(__file__).parent
 try:
