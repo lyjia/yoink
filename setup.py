@@ -1,6 +1,5 @@
 import os
 import sys
-import subprocess
 
 # Removed requests, tarfile, zipfile, shutil imports as they are handled by ytdlp_manager now
 import tempfile
@@ -12,8 +11,8 @@ from cx_Freeze import setup, Executable
 
 # Import necessary functions from our manager module
 try:
-    import ytdlp_manager
-    from const import GIT_VERSION, SETTINGS_APP_NAME
+    from util import ytdlp_manager
+    from util.const import GIT_VERSION, SETTINGS_APP_NAME
 except ImportError:
     logging.error("Failed to import local modules. Ensure they are in the Python path!")
     sys.exit(1)

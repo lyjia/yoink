@@ -5,14 +5,14 @@ from urllib.parse import urlparse
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLineEdit, QPushButton, QTableWidget,
                              QTableWidgetItem, QFileDialog, QHeaderView, QProgressBar,
-                             QAbstractItemView, QMessageBox, QMenu, QComboBox, QLabel)  # Added QComboBox
-from PyQt6.QtCore import Qt, QObject, QThread, QSettings
+                             QAbstractItemView, QMessageBox, QComboBox, QLabel)  # Added QComboBox
+from PyQt6.QtCore import Qt, QThread, QSettings
 import logging # Added logging
 
 from workers import DownloadWorker
 # Import the manager function to find versions
-from ytdlp_manager import find_available_versions, DEFAULT_DOWNLOAD_BASE_DIR
-from const import SETTINGS_LAST_DOWNLOAD_FOLDER, SETTINGS_APP_ORG, SETTINGS_APP_NAME, \
+from util.ytdlp_manager import find_available_versions
+from util.const import SETTINGS_LAST_DOWNLOAD_FOLDER, SETTINGS_APP_ORG, SETTINGS_APP_NAME, \
     SETTINGS_YTDLP_VERSION, GIT_VERSION, APP_NAME, APP_DESC  # Ensure these are imported if needed elsewhere
 
 
