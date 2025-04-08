@@ -264,14 +264,15 @@ class MainWindow(QMainWindow):
             bytes /= 1024.0
         return f"{bytes:.1f} TB"
 
-    def download_finished(self, download_id):
-        self.update_status(download_id, STA_FINISHED)
+    def download_finished(self, download_id, was_cancelled):
+        if was_cancelled:
+            self.update_status(download_id, STA_ERROR)
+        else:
+            self.update_status(download_id, STA_FINISHED)
         # Clear progress and speed
         for row in range(self.table.rowCount()):
             if self.table.item(row, 1).data(Qt.ItemDataRole.UserRole) == download_id:
-                self.table.item(row, 6).setText("")  # Speed column
                 self.table.item(row, 4).setText("")  # Downloaded column
-                self.table.item(row, 5).setText("")  # Total column
                 progress_bar = self.table.cellWidget(row, 7)
                 progress_bar.setValue(100)  # Ensure full progress
         self.cleanup_download(download_id)

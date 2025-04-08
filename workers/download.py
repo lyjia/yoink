@@ -8,7 +8,7 @@ from util.ytdlp_manager import get_ytdlp_module # Import the manager function
 
 class DownloadWorker(QObject):
     progress_updated = pyqtSignal(str, dict)  # download_id, progress_info
-    finished = pyqtSignal(str)                # download_id
+    finished = pyqtSignal(str, bool)                # download_id
     started_running = pyqtSignal(str)
     error_occurred = pyqtSignal(str, str)     # download_id, error_msg
 
@@ -20,7 +20,7 @@ class DownloadWorker(QObject):
         self.ytdlp_version = ytdlp_version # Allow specifying version
         self._cancelled = False
         self.ytdlp = None # Placeholder for the loaded module
-        self.accumulated_bytes = 0  # Track total downloaded bytes
+        self.accumulated_bytes = 0  # Track total downloaded bytes from previously-completed streams
 
     def run(self):
         # --- Load yt-dlp module ---
@@ -46,8 +46,7 @@ class DownloadWorker(QObject):
             # Use the dynamically loaded module instance
             with self.ytdlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([self.url])
-            if not self._cancelled:
-                self.finished.emit(self.download_id)
+                self.finished.emit(self.download_id, self._cancelled)
         except self.ytdlp.DownloadError as e: # Catch specific yt-dlp errors if needed
              if not self._cancelled:
                  # Try to provide a cleaner error message
@@ -75,11 +74,10 @@ class DownloadWorker(QObject):
         
         if d['status'] == 'downloading':
             # Update accumulated bytes and total
-            self.accumulated_bytes += d.get('downloaded_bytes', 0)
             progress_data = {
                 'status': 'downloading',
-                'total_bytes': d.get('total_bytes') or self.accumulated_bytes,
-                'downloaded_bytes': self.accumulated_bytes,
+                'total_bytes': self.accumulated_bytes + (d.get('total_bytes') or 0),
+                'downloaded_bytes': self.accumulated_bytes + (d.get('downloaded_bytes') or 0),
                 'speed': d.get('speed', 0),
                 'percent': d.get('percent', 0)
             }
@@ -88,6 +86,7 @@ class DownloadWorker(QObject):
             if self.accumulated_bytes == d.get('downloaded_bytes', 0):
                 self.started_running.emit(self.download_id)
         elif d['status'] == 'finished':
+            self.accumulated_bytes += d.get('total_bytes')
             self.progress_updated.emit(self.download_id, {
                 'status': 'finished',
                 'percent': 100,
