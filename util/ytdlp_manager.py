@@ -1,14 +1,15 @@
 import os
 import sys
 import requests
-import tarfile
-import zipfile
-import shutil
-import importlib.util
+# import tarfile # Removed
+import zipimport # Added
+# import shutil # Removed
+# import importlib.util # Removed
 from pathlib import Path
 import logging
+# import tempfile # Removed as it's no longer used
 
-# requirements for yt-dlp
+# requirements for yt-dlp (Keep for now, might be needed by loaded module)
 import optparse
 import glob
 import xml
@@ -76,41 +77,34 @@ def _get_release_data(version=DEFAULT_VERSION, releases_api_url=DEFAULT_RELEASES
         return None
 
 
-def get_source_archive_url(version=DEFAULT_VERSION, releases_api_url=DEFAULT_RELEASES_URL):
-    """Fetches the source code archive URL (.tar.gz or .zip) for the specified version."""
+def _find_pyz_asset(release_data):
+    """Finds the yt-dlp.pyz asset within the release data."""
+    assets = release_data.get("assets", [])
+    for asset in assets:
+        if asset.get("name") == "yt-dlp.pyz":
+            logging.debug(f"Found yt-dlp.pyz asset: {asset.get('browser_download_url')}")
+            return asset
+    return None
+
+def get_pyz_asset_url(version=DEFAULT_VERSION, releases_api_url=DEFAULT_RELEASES_URL):
+    """Fetches the yt-dlp.pyz asset URL for the specified version."""
     target_release_data = _get_release_data(version, releases_api_url)
     if not target_release_data:
         return None, None # Return None for URL and Tag
 
     tag_name = target_release_data.get("tag_name")
-    assets = target_release_data.get("assets", [])
-    source_url_tar = None
-    source_url_zip = None
+    pyz_asset = _find_pyz_asset(target_release_data)
 
-    # Check top-level archive URLs first (common for source)
-    source_url_tar = target_release_data.get("tarball_url")
-    source_url_zip = target_release_data.get("zipball_url")
-
-    # If not found at top-level, check assets specifically named
-    if not source_url_tar and not source_url_zip:
-        logging.debug("Source URLs not found at top level, checking assets...")
-        for asset in assets:
-            name = asset.get("name", "").lower()
-            url = asset.get("browser_download_url")
-            if url:
-                if name == "yt-dlp.tar.gz":
-                    source_url_tar = url
-                    break # Prefer tar.gz
-                elif name == "source code (zip)" or (name.endswith(".zip") and "source" in name):
-                    source_url_zip = url # Keep checking for tar.gz
-
-    final_url = source_url_tar or source_url_zip # Prioritize tar.gz
-
-    if not final_url:
-        logging.warning(f"Could not find a source code download asset (.tar.gz or .zip) for version '{tag_name}'.")
+    if not pyz_asset:
+        logging.warning(f"Could not find yt-dlp.pyz download asset for version '{tag_name}'.")
         return None, tag_name # Return tag even if URL not found
 
-    logging.info(f"Found source download URL for version {tag_name}: {final_url}")
+    final_url = pyz_asset.get("browser_download_url")
+    if not final_url:
+        logging.warning(f"Found yt-dlp.pyz asset for version '{tag_name}' but it has no download URL.")
+        return None, tag_name
+
+    logging.info(f"Found yt-dlp.pyz download URL for version {tag_name}: {final_url}")
     return final_url, tag_name
 
 def download_release(url: str, target_file: Path) -> bool:
@@ -139,183 +133,8 @@ def download_release(url: str, target_file: Path) -> bool:
         return False
 
 
-def extract_release(archive_path: Path, extract_dir: Path) -> Path | None:
-    """
-    Extracts a .tar.gz or .zip archive.
-
-    Args:
-        archive_path: Path to the archive file.
-        extract_dir: Directory where the archive should be extracted.
-
-    Returns:
-        Path to the primary extracted content directory (e.g., the folder named
-        like 'yt-dlp-TAG') inside extract_dir, or None if extraction fails.
-        Does NOT delete the archive file.
-    """
-    logging.info(f"Extracting {archive_path.name} to {extract_dir}...")
-    extracted_content_path = None # Initialize path to return
-    extract_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        if archive_path.name.endswith(".tar.gz"):
-            with tarfile.open(archive_path, "r:gz") as tar:
-                # Attempt to find the common top-level directory name
-                members = tar.getmembers()
-                if members:
-                    prefix = os.path.commonprefix([m.name for m in members if m.name])
-                    if prefix and ('/' in prefix or '\\' in prefix):
-                         top_dir_name = prefix.split('/')[0].split('\\')[0]
-                         extracted_content_path = extract_dir / top_dir_name
-                    elif prefix: # Handle case where prefix is the only file/dir name
-                         extracted_content_path = extract_dir / prefix
-
-                logging.debug(f"Extracting tar.gz to {extract_dir}...")
-                # Use filter='data' if available (Python 3.12+) for security
-                if sys.version_info >= (3, 12):
-                     tar.extractall(path=extract_dir, filter='data')
-                else:
-                     tar.extractall(path=extract_dir) # Older Python versions
-
-        elif archive_path.name.endswith(".zip"):
-            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                # Attempt to find the common top-level directory name
-                namelist = zip_ref.namelist()
-                if namelist:
-                    prefix = os.path.commonprefix(namelist)
-                    if prefix and ('/' in prefix or '\\' in prefix):
-                         top_dir_name = prefix.split('/')[0].split('\\')[0]
-                         extracted_content_path = extract_dir / top_dir_name
-                    elif prefix:
-                         extracted_content_path = extract_dir / prefix
-
-                logging.debug(f"Extracting zip to {extract_dir}...")
-                zip_ref.extractall(path=extract_dir)
-        else:
-            logging.error(f"Unsupported archive format: {archive_path.suffix}")
-            return None # Return None on failure
-
-        logging.info(f"Successfully extracted {archive_path.name}")
-        # Find the actual 'yt_dlp' module directory after extraction
-        # If we didn't determine the path via commonprefix, try finding a single dir
-        if not extracted_content_path or not extracted_content_path.exists():
-             extracted_items = list(extract_dir.iterdir())
-             if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                  extracted_content_path = extracted_items[0]
-             else:
-                  # If multiple items or just files, assume content is directly in extract_dir
-                  # This might happen if the archive doesn't have a single root folder
-                  extracted_content_path = extract_dir
-                  logging.warning("Could not determine single top-level extraction dir. Returning base extract dir.")
-
-        return extracted_content_path # Return the path to the extracted content
-
-    except (tarfile.TarError, zipfile.BadZipFile, OSError, EOFError) as e: # Added EOFError
-        logging.error(f"Error extracting archive: {e}")
-        # Clean up potentially partial extraction
-        if extract_dir.exists():
-             try:
-                  shutil.rmtree(extract_dir)
-             except OSError as clean_e:
-                  logging.warning(f"Could not clean up extraction directory {extract_dir} on error: {clean_e}")
-        return None # Return None on failure
-    # *** REMOVED archive deletion from finally block ***
-    # finally:
-    #     # Clean up the downloaded archive file
-    #     if archive_path.exists():
-    #         logging.debug(f"Removing archive file: {archive_path}")
-    #         os.remove(archive_path) # Changed to archive_path.unlink() if using Path
-
-def _move_and_cleanup_extraction(extract_dir: Path, version_tag: str) -> Path | None:
-    """
-    Finds the 'yt_dlp' module within an extraction directory, moves it to the
-    final versioned location (extract_dir / version_tag / 'yt_dlp'),
-    and cleans up intermediate folders.
-
-    Returns:
-        Path to the final 'yt_dlp' module directory, or None on failure.
-    """
-    target_version_dir = extract_dir.parent / version_tag # e.g. .yoink_cache/2023.11.16
-    final_module_path = target_version_dir / 'yt_dlp'
-
-    # Find the actual 'yt_dlp' module directory after extraction
-    source_module_dir = None
-    extracted_items = list(extract_dir.iterdir())
-
-    if len(extracted_items) == 1 and extracted_items[0].is_dir():
-        # Likely extracted into a single top-level folder (e.g., yt-dlp-2023.11.16)
-        base_search_dir = extracted_items[0]
-        potential_module_dir = base_search_dir / 'yt_dlp'
-        if potential_module_dir.is_dir() and (potential_module_dir / '__init__.py').is_file():
-            source_module_dir = potential_module_dir
-        else:
-            # Look deeper, e.g., src/yt_dlp
-            potential_module_dir = base_search_dir / 'src' / 'yt_dlp'
-            if potential_module_dir.is_dir() and (potential_module_dir / '__init__.py').is_file():
-                source_module_dir = potential_module_dir
-            # Check if yt_dlp.py exists directly (older structure?) - less likely now
-            elif (base_search_dir / 'yt_dlp.py').is_file():
-                 logging.warning("Found 'yt_dlp.py' file, not package directory. Handling as package source dir.")
-                 source_module_dir = base_search_dir # Treat the container dir as source
-
-    elif (extract_dir / 'yt_dlp').is_dir() and (extract_dir / 'yt_dlp' / '__init__.py').is_file():
-         # Extracted directly into the target dir (less common for source archives)
-         source_module_dir = extract_dir / 'yt_dlp'
-
-    if not source_module_dir:
-        logging.error(f"Could not find the 'yt_dlp' module directory within the extracted files in {extract_dir}.")
-        return None
-
-    # Ensure target version directory exists
-    target_version_dir.mkdir(parents=True, exist_ok=True)
-
-    # Move the found yt_dlp package to the target version directory
-    logging.info(f"Moving {source_module_dir} to {final_module_path}")
-    try:
-        # Use shutil.move for robustness (handles existing dirs if target is empty)
-        # If final_module_path exists, shutil.move might raise Error. Remove first.
-        if final_module_path.exists():
-             logging.warning(f"Removing existing target path {final_module_path} before move.")
-             if final_module_path.is_dir():
-                  shutil.rmtree(final_module_path)
-             else:
-                  final_module_path.unlink() # Remove file or symlink
-
-        shutil.move(str(source_module_dir), str(final_module_path))
-
-        # Clean up the original extraction directory structure
-        logging.debug(f"Cleaning up extraction directory: {extract_dir}")
-        # Remove the now empty parent of the source module dir if it's not the main extract dir
-        if source_module_dir.parent != extract_dir and source_module_dir.parent.exists():
-             try:
-                  # Only remove if empty
-                  if not any(source_module_dir.parent.iterdir()):
-                       source_module_dir.parent.rmdir()
-             except OSError:
-                  logging.warning(f"Could not remove empty parent dir: {source_module_dir.parent}")
-
-        # Remove the original top-level extraction folder if it exists and is empty
-        if len(extracted_items) == 1 and extracted_items[0].is_dir() and extracted_items[0].exists():
-             try:
-                  if not any(extracted_items[0].iterdir()):
-                       extracted_items[0].rmdir()
-             except OSError:
-                  logging.warning(f"Could not remove empty top-level extraction dir: {extracted_items[0]}")
-
-        # Optionally remove the base extract_dir itself if empty, but usually the caller handles this.
-
-        logging.info(f"Successfully placed 'yt_dlp' module in {final_module_path.parent}")
-        return final_module_path
-
-    except (shutil.Error, OSError) as e:
-        logging.error(f"Error moving or cleaning up extracted files: {e}")
-        # Attempt to clean up target if move failed partially
-        if final_module_path.exists():
-             try: shutil.rmtree(final_module_path)
-             except OSError: pass
-        return None
-
-# (Removed old extraction logic and finally block)
-
-
+# --- Removed extract_release function ---
+# --- Removed _move_and_cleanup_extraction function ---
 # --- Main Function ---
 
 def get_ytdlp_module(version=DEFAULT_VERSION,
@@ -323,10 +142,11 @@ def get_ytdlp_module(version=DEFAULT_VERSION,
                      releases_api_url=DEFAULT_RELEASES_URL,
                      force_download=False):
     """
-    Ensures the specified yt-dlp version is available locally and returns the module.
+    Ensures the specified yt-dlp version's .pyz file is available locally
+    and returns the loaded module using zipimport.
 
-    Downloads and extracts the release if it's not found or if force_download is True.
-    Dynamically imports and returns the yt-dlp module.
+    Downloads the .pyz release if it's not found or if force_download is True.
+    Dynamically imports and returns the yt-dlp module from the .pyz file.
     """
     base_dir = Path(base_dir)
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -342,14 +162,14 @@ def get_ytdlp_module(version=DEFAULT_VERSION,
 
     # Resolve version tag and get source URL if needed
     if version == "latest" or force_download:
-        logging.info(f"Resolving source URL for version '{version}'...")
-        url, tag = get_source_archive_url(version, releases_api_url)
+        logging.info(f"Resolving .pyz asset URL for version '{version}'...")
+        url, tag = get_pyz_asset_url(version, releases_api_url) # Changed function call
         if not url or not tag:
-            logging.error("Failed to resolve download URL or version tag.")
+            logging.error("Failed to resolve .pyz download URL or version tag.")
             return None
         download_url = url
         actual_version_tag = tag
-        logging.info(f"Resolved '{version}' to version tag '{actual_version_tag}' with URL: {download_url}")
+        logging.info(f"Resolved '{version}' to version tag '{actual_version_tag}' with .pyz URL: {download_url}")
     else:
         # For specific versions, assume the tag is the version string
         actual_version_tag = version
@@ -366,138 +186,94 @@ def get_ytdlp_module(version=DEFAULT_VERSION,
               return None
 
     version_dir = base_dir / actual_version_tag # e.g., ~/.yoink_cache/2023.11.16
-    module_path = version_dir / "yt_dlp" # The final package directory path
+    pyz_path = version_dir / "yt-dlp.pyz" # Target the .pyz file
 
     # 2. Check if Already Available
-    if not force_download and module_path.is_dir() and (module_path / "__init__.py").exists():
-        logging.info(f"Found existing yt-dlp version {actual_version_tag} at {module_path}")
+    if not force_download and pyz_path.is_file():
+        logging.info(f"Found existing yt-dlp version {actual_version_tag} at {pyz_path}")
     else:
-        # 3. Download and Extract if Needed
-        logging.info(f"yt-dlp version {actual_version_tag} not found locally or download forced.")
+        # 3. Download .pyz if Needed
+        logging.info(f"yt-dlp version {actual_version_tag} .pyz not found locally or download forced.")
 
-        # Ensure download URL is fetched if not already done (for specific versions)
         # Ensure download URL is fetched if not already done (for specific versions without force_download)
         if not download_url:
-             url, tag = get_source_archive_url(actual_version_tag, releases_api_url)
+             url, tag = get_pyz_asset_url(actual_version_tag, releases_api_url) # Changed function call
              # Check if the resolved tag matches the requested specific version tag
              if not url or tag != actual_version_tag:
-                 logging.error(f"Failed to get source download URL for specific version {actual_version_tag} (Tag mismatch or URL missing).")
+                 logging.error(f"Failed to get .pyz download URL for specific version {actual_version_tag} (Tag mismatch or URL missing).")
                  return None
              download_url = url
 
-        # Prepare download target
-        # Use a temporary directory for download and initial extraction
+        # Prepare download destination
         try:
-            with tempfile.TemporaryDirectory(prefix=f"ytdlp_{actual_version_tag}_") as tmpdir:
-                tmp_path = Path(tmpdir)
-                archive_filename = Path(download_url).name
-                download_target_path = tmp_path / archive_filename
-                extract_target_dir = tmp_path / "extracted"
+            # Ensure the target directory exists
+            version_dir.mkdir(parents=True, exist_ok=True)
 
-        # Clean up potentially incomplete previous attempts for this version
-                # Clean up final destination *before* starting download/extract
-                if version_dir.exists():
-                    logging.warning(f"Removing existing destination directory {version_dir} before download/extraction.")
-                    try:
-                        shutil.rmtree(version_dir)
-                    except OSError as e:
-                         logging.error(f"Failed to remove existing directory {version_dir}: {e}")
-                         return None
-                # version_dir.mkdir(parents=True, exist_ok=True) # Create final dir later
-
-                # Download
-                if not download_release(download_url, download_target_path):
-                    logging.error("Download failed.")
-                    return None # Temp dir will be cleaned up
-
-                # Extract to temporary location
-                extracted_content_dir = extract_release(download_target_path, extract_target_dir)
-                if not extracted_content_dir:
-                    logging.error("Extraction failed.")
-                    return None # Temp dir will be cleaned up
-
-                # Remove archive file now that extraction is done
-                logging.debug(f"Removing archive file: {download_target_path}")
-                try:
-                     download_target_path.unlink()
-                except OSError:
-                     logging.warning(f"Could not remove archive file: {download_target_path}")
-
-
-                # Move the 'yt_dlp' package from extracted temp location to final version_dir
-                final_module_path = _move_and_cleanup_extraction(extracted_content_dir, actual_version_tag)
-
-                if not final_module_path or final_module_path != module_path:
-                     logging.error("Failed to move extracted module to final destination.")
-                     # Attempt cleanup of version_dir if move failed
-                     if version_dir.exists():
-                          try: shutil.rmtree(version_dir)
-                          except OSError: pass
+            # Clean up potentially incomplete previous attempts for this version's .pyz file
+            if pyz_path.exists():
+                 logging.warning(f"Removing existing destination file {pyz_path} before download.")
+                 try:
+                     pyz_path.unlink()
+                 except OSError as e:
+                     logging.error(f"Failed to remove existing file {pyz_path}: {e}")
                      return None
 
-                logging.info(f"Successfully downloaded and processed yt-dlp version {actual_version_tag}")
+            # Download directly to the final destination
+            logging.info(f"Downloading yt-dlp.pyz for version {actual_version_tag}...")
+            if not download_release(download_url, pyz_path):
+                logging.error("Download failed.")
+                # Attempt cleanup of potentially partial download
+                if pyz_path.exists():
+                    try: pyz_path.unlink()
+                    except OSError: pass
+                return None
+
+            logging.info(f"Successfully downloaded yt-dlp.pyz for version {actual_version_tag} to {pyz_path}")
 
         except Exception as e:
-             logging.error(f"Error during download/extraction process: {e}", exc_info=True)
-             # Attempt cleanup of version_dir if process failed
-             if version_dir.exists():
-                  try: shutil.rmtree(version_dir)
+             logging.error(f"Error during download process: {e}", exc_info=True)
+             # Attempt cleanup
+             if pyz_path.exists():
+                  try: pyz_path.unlink()
                   except OSError: pass
              return None
+        # If we reach here, download was successful
 
-        # If we reach here, download/extraction/move was successful
-
-
-    # 4. Dynamically Load and Return the Module
-    module_init_file = module_path / "__init__.py"
-    if not module_init_file.is_file():
-        logging.error(f"Could not find __init__.py in {module_path}. Cannot import module.")
-        return None
+    # 4. Load Module using zipimport
+    logging.info(f"Attempting to load yt-dlp module from {pyz_path} using zipimport...")
+    if not pyz_path.is_file():
+         logging.error(f"Target yt-dlp.pyz file not found at {pyz_path}")
+         return None
 
     try:
-        # Add the *parent* directory of the 'yt_dlp' package to sys.path temporarily
-        # This allows Python to find the 'yt_dlp' module itself.
-        parent_dir = str(module_path.parent)
-        if parent_dir not in sys.path:
-            sys.path.insert(0, parent_dir)
-            logging.debug(f"Temporarily added {parent_dir} to sys.path")
+        importer = zipimport.zipimporter(str(pyz_path))
+        # Load the 'yt_dlp' package from within the .pyz
+        # Ensure the package name 'yt_dlp' matches what's inside the .pyz structure
+        ytdlp_module = importer.load_module('yt_dlp')
+        logging.info(f"Successfully imported yt-dlp module version {actual_version_tag} from {pyz_path}")
 
-        # Import the module
-        # Using importlib is cleaner than exec
-        spec = importlib.util.spec_from_file_location("yt_dlp", str(module_init_file))
-        if spec and spec.loader:
-             ytdlp_module = importlib.util.module_from_spec(spec)
-             # Add the loaded module to sys.modules BEFORE executing it
-             # This is crucial for handling relative imports within the yt_dlp package
-             sys.modules["yt_dlp"] = ytdlp_module
-             spec.loader.exec_module(ytdlp_module)
-             logging.info(f"Successfully imported yt-dlp module version {actual_version_tag} from {module_path}")
+        # Add to sys.modules BEFORE use to handle internal relative imports within yt_dlp
+        # This is crucial for the loaded module to function correctly.
+        sys.modules["yt_dlp"] = ytdlp_module
 
-             # Optional: Clean up sys.path if strict isolation is needed,
-             # but often leaving it is fine for the duration of the script.
-             # Be cautious if this manager is used long-term in a complex app.
-             # sys.path.remove(parent_dir)
-             # logging.debug(f"Removed {parent_dir} from sys.path")
-
-             return ytdlp_module
-        else:
-             logging.error(f"Could not create module spec for {module_init_file}")
-             # Clean up sys.path if added
-             if parent_dir in sys.path and sys.path[0] == parent_dir:
-                 sys.path.pop(0)
-             return None
-
-    except ImportError as e:
-        logging.error(f"Failed to import the downloaded yt-dlp module: {e.__class__.__name__} {e}")
-        # Clean up sys.path if added
-        if parent_dir in sys.path and sys.path[0] == parent_dir:
-            sys.path.pop(0)
+        return ytdlp_module
+    except zipimport.ZipImportError as e:
+        logging.error(f"Failed to import yt-dlp module from {pyz_path} (ZipImportError): {e}", exc_info=True)
+        # Clean up sys.modules if import failed partially?
+        if "yt_dlp" in sys.modules and isinstance(sys.modules["yt_dlp"], zipimport.zipimporter):
+             del sys.modules["yt_dlp"] # Or if it's the module object itself
         return None
+    except ImportError as e:
+         logging.error(f"Failed to import yt-dlp module from {pyz_path} (ImportError): {e}", exc_info=True)
+         if "yt_dlp" in sys.modules: # Clean up if partially registered
+              try: del sys.modules["yt_dlp"]
+              except KeyError: pass
+         return None
     except Exception as e:
-        logging.error(f"An unexpected error occurred during module import: {e}")
-        # Clean up sys.path if added
-        if parent_dir in sys.path and sys.path[0] == parent_dir:
-            sys.path.pop(0)
+        logging.error(f"An unexpected error occurred during zipimport: {e}", exc_info=True)
+        if "yt_dlp" in sys.modules: # Clean up if partially registered
+             try: del sys.modules["yt_dlp"]
+             except KeyError: pass
         return None
 
 
@@ -509,8 +285,8 @@ def find_available_versions(base_dir=DEFAULT_DOWNLOAD_BASE_DIR):
 
     versions = []
     for item in base_dir.iterdir():
-        # Check if it's a directory containing a valid yt_dlp module
-        if item.is_dir() and (item / "yt_dlp" / "__init__.py").is_file():
+        # Check if it's a directory containing the yt-dlp.pyz file
+        if item.is_dir() and (item / "yt-dlp.pyz").is_file():
             versions.append(item.name) # The directory name is the version tag
     return sorted(versions, reverse=True) # Sort newest first
 
@@ -523,21 +299,28 @@ if __name__ == "__main__":
 
     print("\nAttempting to get latest yt-dlp module...")
     # Set force_download=True to test downloading even if present
-    ytdlp = get_ytdlp_module(version="latest", force_download=False)
+    ytdlp = get_ytdlp_module(version="latest", force_download=False) # Set force_download=True to test
 
     if ytdlp:
         print("\nSuccessfully obtained yt-dlp module.")
         # You can now use the module, e.g., access its version
         try:
-            print(f"Loaded yt-dlp version: {ytdlp.version.__version__}")
+            # Accessing version might still work if the loaded module has it
+            if hasattr(ytdlp, 'version') and hasattr(ytdlp.version, '__version__'):
+                 print(f"Loaded yt-dlp version: {ytdlp.version.__version__}")
+            else:
+                 print("Loaded yt-dlp module, but could not determine version attribute.")
             # Example: Create a YoutubeDL object (optional, just to test)
             # opts = {'quiet': True, 'logger': logging.getLogger('yt-dlp-test')}
-            # with ytdlp.YoutubeDL(opts) as ydl:
-            #     print("YoutubeDL object created successfully.")
-            #     info = ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
-            #     print(f"Video Title: {info.get('title')}")
+            # try:
+            #     with ytdlp.YoutubeDL(opts) as ydl:
+            #         print("YoutubeDL object created successfully.")
+            #         # info = ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
+            #         # print(f"Video Title: {info.get('title')}")
+            # except Exception as test_e:
+            #      print(f"Error during YoutubeDL test: {test_e}")
         except AttributeError:
-            print("Could not retrieve version from the loaded module (structure might differ).")
+            print("Could not retrieve version from the loaded module (attribute missing or structure differs).")
         except Exception as e:
             print(f"Error using the loaded yt-dlp module: {e}")
     else:
@@ -545,8 +328,13 @@ if __name__ == "__main__":
 
     # Example: Get a specific version
     # print("\nAttempting to get specific version '2023.07.06'...")
-    # ytdlp_specific = get_ytdlp_module(version="2023.07.06")
+    # SPECIFIC_VERSION = "2023.11.16" # Example specific version
+    # print(f"\nAttempting to get specific version '{SPECIFIC_VERSION}'...")
+    # ytdlp_specific = get_ytdlp_module(version=SPECIFIC_VERSION)
     # if ytdlp_specific:
-    #     print(f"Loaded specific yt-dlp version: {ytdlp_specific.version.__version__}")
+    #     if hasattr(ytdlp_specific, 'version') and hasattr(ytdlp_specific.version, '__version__'):
+    #          print(f"Loaded specific yt-dlp version: {ytdlp_specific.version.__version__}")
+    #     else:
+    #          print(f"Loaded specific yt-dlp module ({SPECIFIC_VERSION}), but could not determine version attribute.")
     # else:
     #     print("Failed to obtain specific version.")
