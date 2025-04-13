@@ -77,34 +77,35 @@ def _get_release_data(version=DEFAULT_VERSION, releases_api_url=DEFAULT_RELEASES
         return None
 
 
-def _find_pyz_asset(release_data):
-    """Finds the yt-dlp.pyz asset within the release data."""
+def _find_zipimport_asset(release_data):
+    """Finds the platform-independent zipimport asset (named 'yt-dlp') within the release data."""
     assets = release_data.get("assets", [])
     for asset in assets:
-        if asset.get("name") == "yt-dlp.pyz":
-            logging.debug(f"Found yt-dlp.pyz asset: {asset.get('browser_download_url')}")
+        # The asset for zipimport is named simply 'yt-dlp'
+        if asset.get("name") == "yt-dlp":
+            logging.debug(f"Found zipimport asset ('yt-dlp'): {asset.get('browser_download_url')}")
             return asset
     return None
 
-def get_pyz_asset_url(version=DEFAULT_VERSION, releases_api_url=DEFAULT_RELEASES_URL):
-    """Fetches the yt-dlp.pyz asset URL for the specified version."""
+def get_zipimport_asset_url(version=DEFAULT_VERSION, releases_api_url=DEFAULT_RELEASES_URL):
+    """Fetches the zipimport asset ('yt-dlp') URL for the specified version."""
     target_release_data = _get_release_data(version, releases_api_url)
     if not target_release_data:
         return None, None # Return None for URL and Tag
 
     tag_name = target_release_data.get("tag_name")
-    pyz_asset = _find_pyz_asset(target_release_data)
+    zipimport_asset = _find_zipimport_asset(target_release_data) # Use renamed helper
 
-    if not pyz_asset:
-        logging.warning(f"Could not find yt-dlp.pyz download asset for version '{tag_name}'.")
+    if not zipimport_asset:
+        logging.warning(f"Could not find zipimport download asset ('yt-dlp') for version '{tag_name}'.")
         return None, tag_name # Return tag even if URL not found
 
-    final_url = pyz_asset.get("browser_download_url")
+    final_url = zipimport_asset.get("browser_download_url")
     if not final_url:
-        logging.warning(f"Found yt-dlp.pyz asset for version '{tag_name}' but it has no download URL.")
+        logging.warning(f"Found zipimport asset ('yt-dlp') for version '{tag_name}' but it has no download URL.")
         return None, tag_name
 
-    logging.info(f"Found yt-dlp.pyz download URL for version {tag_name}: {final_url}")
+    logging.info(f"Found zipimport ('yt-dlp') download URL for version {tag_name}: {final_url}")
     return final_url, tag_name
 
 def download_release(url: str, target_file: Path) -> bool:
@@ -142,11 +143,11 @@ def get_ytdlp_module(version=DEFAULT_VERSION,
                      releases_api_url=DEFAULT_RELEASES_URL,
                      force_download=False):
     """
-    Ensures the specified yt-dlp version's .pyz file is available locally
+    Ensures the specified yt-dlp version's zipimport file ('yt-dlp') is available locally
     and returns the loaded module using zipimport.
 
-    Downloads the .pyz release if it's not found or if force_download is True.
-    Dynamically imports and returns the yt-dlp module from the .pyz file.
+    Downloads the zipimport release ('yt-dlp') if it's not found or if force_download is True.
+    Dynamically imports and returns the yt-dlp module from the downloaded file.
     """
     base_dir = Path(base_dir)
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -162,14 +163,14 @@ def get_ytdlp_module(version=DEFAULT_VERSION,
 
     # Resolve version tag and get source URL if needed
     if version == "latest" or force_download:
-        logging.info(f"Resolving .pyz asset URL for version '{version}'...")
-        url, tag = get_pyz_asset_url(version, releases_api_url) # Changed function call
+        logging.info(f"Resolving zipimport asset URL for version '{version}'...")
+        url, tag = get_zipimport_asset_url(version, releases_api_url) # Use renamed function
         if not url or not tag:
-            logging.error("Failed to resolve .pyz download URL or version tag.")
+            logging.error("Failed to resolve zipimport download URL or version tag.")
             return None
         download_url = url
         actual_version_tag = tag
-        logging.info(f"Resolved '{version}' to version tag '{actual_version_tag}' with .pyz URL: {download_url}")
+        logging.info(f"Resolved '{version}' to version tag '{actual_version_tag}' with zipimport URL: {download_url}")
     else:
         # For specific versions, assume the tag is the version string
         actual_version_tag = version
@@ -186,21 +187,30 @@ def get_ytdlp_module(version=DEFAULT_VERSION,
               return None
 
     version_dir = base_dir / actual_version_tag # e.g., ~/.yoink_cache/2023.11.16
-    pyz_path = version_dir / "yt-dlp.pyz" # Target the .pyz file
+    zipimport_path = version_dir / "yt-dlp" # Target the 'yt-dlp' file for zipimport
 
-    # 2. Check if Already Available
-    if not force_download and pyz_path.is_file():
-        logging.info(f"Found existing yt-dlp version {actual_version_tag} at {pyz_path}")
+    # 2. Check if Already Available and Determine if Download is Needed
+    needs_download = False
+    if not zipimport_path.is_file():
+        logging.info(f"yt-dlp zipimport file not found locally at {zipimport_path}.")
+        needs_download = True
+    elif force_download:
+        logging.info(f"Forcing download for yt-dlp zipimport file even though it exists at {zipimport_path}.")
+        needs_download = True
     else:
-        # 3. Download .pyz if Needed
-        logging.info(f"yt-dlp version {actual_version_tag} .pyz not found locally or download forced.")
+        # File exists and force_download is False
+        logging.info(f"Found existing yt-dlp zipimport file for version {actual_version_tag} at {zipimport_path}. Using cached version.")
+        # Proceed directly to loading below, skip download block
 
-        # Ensure download URL is fetched if not already done (for specific versions without force_download)
+    # 3. Download zipimport file if Needed
+    if needs_download:
+        logging.info(f"Proceeding with download actions for yt-dlp version {actual_version_tag}.")
+
+        # Ensure download URL is fetched if not already done (e.g., if needs_download=True because file was missing)
         if not download_url:
-             url, tag = get_pyz_asset_url(actual_version_tag, releases_api_url) # Changed function call
-             # Check if the resolved tag matches the requested specific version tag
+             url, tag = get_zipimport_asset_url(actual_version_tag, releases_api_url)
              if not url or tag != actual_version_tag:
-                 logging.error(f"Failed to get .pyz download URL for specific version {actual_version_tag} (Tag mismatch or URL missing).")
+                 logging.error(f"Failed to get zipimport download URL for specific version {actual_version_tag} (Tag mismatch or URL missing).")
                  return None
              download_url = url
 
@@ -209,48 +219,54 @@ def get_ytdlp_module(version=DEFAULT_VERSION,
             # Ensure the target directory exists
             version_dir.mkdir(parents=True, exist_ok=True)
 
-            # Clean up potentially incomplete previous attempts for this version's .pyz file
-            if pyz_path.exists():
-                 logging.warning(f"Removing existing destination file {pyz_path} before download.")
+            # Attempt to remove existing file *only if forcing download*
+            if force_download and zipimport_path.exists():
+                 logging.warning(f"Attempting to remove existing destination file {zipimport_path} due to force_download=True.")
                  try:
-                     pyz_path.unlink()
+                     # This is the critical point where the error occurred.
+                     # If this still fails, the file handle might be held by something external
+                     # or the zipimporter from a previous load wasn't garbage collected yet.
+                     zipimport_path.unlink()
+                     logging.info(f"Successfully removed existing file {zipimport_path} for forced download.")
                  except OSError as e:
-                     logging.error(f"Failed to remove existing file {pyz_path}: {e}")
+                     logging.error(f"Failed to remove existing file {zipimport_path} during forced download: {e}. Cannot proceed with forced download.")
+                     # Fail explicitly if we cannot remove the file when forced to.
                      return None
 
-            # Download directly to the final destination
-            logging.info(f"Downloading yt-dlp.pyz for version {actual_version_tag}...")
-            if not download_release(download_url, pyz_path):
+            # Download directly to the final destination ('yt-dlp')
+            logging.info(f"Downloading zipimport file ('yt-dlp') for version {actual_version_tag}...")
+            if not download_release(download_url, zipimport_path):
                 logging.error("Download failed.")
                 # Attempt cleanup of potentially partial download
-                if pyz_path.exists():
-                    try: pyz_path.unlink()
+                if zipimport_path.exists():
+                    try: zipimport_path.unlink()
                     except OSError: pass
                 return None
 
-            logging.info(f"Successfully downloaded yt-dlp.pyz for version {actual_version_tag} to {pyz_path}")
+            logging.info(f"Successfully downloaded zipimport file ('yt-dlp') for version {actual_version_tag} to {zipimport_path}")
 
         except Exception as e:
-             logging.error(f"Error during download process: {e}", exc_info=True)
-             # Attempt cleanup
-             if pyz_path.exists():
-                  try: pyz_path.unlink()
-                  except OSError: pass
+             logging.error(f"Error during download preparation/execution: {e}", exc_info=True)
+             # Attempt cleanup if download failed mid-way
+             # We might have created the dir or partially downloaded
+             if zipimport_path.exists() and needs_download: # Only cleanup if we were the ones downloading
+                 try: zipimport_path.unlink()
+                 except OSError: pass
              return None
-        # If we reach here, download was successful
+        # If we reach here, download was successful or skipped because file existed and force_download=False
 
     # 4. Load Module using zipimport
-    logging.info(f"Attempting to load yt-dlp module from {pyz_path} using zipimport...")
-    if not pyz_path.is_file():
-         logging.error(f"Target yt-dlp.pyz file not found at {pyz_path}")
+    logging.info(f"Attempting to load yt-dlp module from {zipimport_path} using zipimport...")
+    if not zipimport_path.is_file():
+         logging.error(f"Target zipimport file ('yt-dlp') not found at {zipimport_path}")
          return None
 
     try:
-        importer = zipimport.zipimporter(str(pyz_path))
-        # Load the 'yt_dlp' package from within the .pyz
-        # Ensure the package name 'yt_dlp' matches what's inside the .pyz structure
+        importer = zipimport.zipimporter(str(zipimport_path))
+        # Load the 'yt_dlp' package from within the zipimport file
+        # Ensure the package name 'yt_dlp' matches what's inside the file structure
         ytdlp_module = importer.load_module('yt_dlp')
-        logging.info(f"Successfully imported yt-dlp module version {actual_version_tag} from {pyz_path}")
+        logging.info(f"Successfully imported yt-dlp module version {actual_version_tag} from {zipimport_path}")
 
         # Add to sys.modules BEFORE use to handle internal relative imports within yt_dlp
         # This is crucial for the loaded module to function correctly.
@@ -258,13 +274,13 @@ def get_ytdlp_module(version=DEFAULT_VERSION,
 
         return ytdlp_module
     except zipimport.ZipImportError as e:
-        logging.error(f"Failed to import yt-dlp module from {pyz_path} (ZipImportError): {e}", exc_info=True)
+        logging.error(f"Failed to import yt-dlp module from {zipimport_path} (ZipImportError): {e}", exc_info=True)
         # Clean up sys.modules if import failed partially?
         if "yt_dlp" in sys.modules and isinstance(sys.modules["yt_dlp"], zipimport.zipimporter):
              del sys.modules["yt_dlp"] # Or if it's the module object itself
         return None
     except ImportError as e:
-         logging.error(f"Failed to import yt-dlp module from {pyz_path} (ImportError): {e}", exc_info=True)
+         logging.error(f"Failed to import yt-dlp module from {zipimport_path} (ImportError): {e}", exc_info=True)
          if "yt_dlp" in sys.modules: # Clean up if partially registered
               try: del sys.modules["yt_dlp"]
               except KeyError: pass
@@ -285,8 +301,8 @@ def find_available_versions(base_dir=DEFAULT_DOWNLOAD_BASE_DIR):
 
     versions = []
     for item in base_dir.iterdir():
-        # Check if it's a directory containing the yt-dlp.pyz file
-        if item.is_dir() and (item / "yt-dlp.pyz").is_file():
+        # Check if it's a directory containing the zipimport file ('yt-dlp')
+        if item.is_dir() and (item / "yt-dlp").is_file():
             versions.append(item.name) # The directory name is the version tag
     return sorted(versions, reverse=True) # Sort newest first
 
