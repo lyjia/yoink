@@ -5,6 +5,7 @@ import sys
 import tempfile
 import ast
 import logging
+import re # Added for version parsing
 from pathlib import Path
 
 from cx_Freeze import setup, Executable
@@ -324,70 +325,12 @@ def find_ytdlp_dependencies(ytdlp_dir_path):
     return dependencies
 
 
-# --- Dynamic Dependency Discovery Logic ---
-
-discovered_packages = set()
-logging.info("--- Starting yt-dlp Dependency Discovery ---")
-try:
-    # Use a context manager for the temporary directory
-    with tempfile.TemporaryDirectory(prefix="ytdlp_build_") as tmpdir:
-        tmp_path = Path(tmpdir)
-        logging.info(f"Created temporary directory: {tmp_path}")
-
-        # 1. Get URL (using imported function)
-        # Use 'latest' to match previous logic, ytdlp_manager handles the API endpoint
-        source_url, tag_name = ytdlp_manager.get_source_archive_url(version="latest")
-        if not source_url:
-            raise RuntimeError(f"Failed to get yt-dlp source URL (tag: {tag_name}).")
-        logging.info(f"Using source URL for tag {tag_name}: {source_url}")
-        archive_name = f"{Path(source_url).name}.tar.gz"
-        logging.info(f"Resolved source URL filename: {archive_name}")
-
-        # 2. Download (using imported function)
-
-        archive_path = tmp_path / archive_name
-        if not ytdlp_manager.download_release(source_url, archive_path):
-            raise RuntimeError("Failed to download yt-dlp source archive.")
-
-        # 3. Extract (using imported function)
-        extract_base_dir = tmp_path / "extracted"
-        # extract_release now returns the path to the main extracted content dir
-        extracted_content_path = ytdlp_manager.extract_release(
-            archive_path, extract_base_dir
-        )
-        if not extracted_content_path:
-            # Attempt to delete archive before raising
-            if archive_path.exists():
-                archive_path.unlink()
-            raise RuntimeError("Failed to extract yt-dlp source archive.")
-
-        # Delete archive now that extraction is successful
-        logging.debug(f"Removing downloaded archive: {archive_path}")
-        if archive_path.exists():
-            archive_path.unlink()
-
-        # 4. Find yt_dlp package dir (using local helper)
-        ytdlp_package_path = find_ytdlp_package_dir(extracted_content_path)
-        if not ytdlp_package_path:
-            raise RuntimeError(
-                "Failed to find yt_dlp package directory after extraction."
-            )
-
-        # 5. Analyze Dependencies (using local helper)
-        discovered_packages = find_ytdlp_dependencies(ytdlp_package_path)
-
-except Exception as e:
-    logging.error(
-        f"*** Failed to automatically discover yt-dlp dependencies: {e} ***",
-        exc_info=True,
-    )
-    logging.error(
-        "*** Build might fail or the executable might miss runtime dependencies. ***"
-    )
-    # Continue without discovered packages, relying on manual entries or cx_freeze defaults
-finally:
-    logging.info("--- Finished yt-dlp Dependency Discovery ---")
-    # Temporary directory is automatically cleaned up by the context manager
+# --- Dynamic Dependency Discovery Logic (REMOVED) ---
+# This section was removed as it relied on downloading/extracting the source archive,
+# which is incompatible with the current util.ytdlp_manager focused on zipimport assets.
+# The build now relies solely on the manually specified 'build_packages' list below.
+logging.warning("Dynamic dependency discovery based on source archive is disabled.")
+discovered_packages = set() # Ensure this is defined as empty
 
 # --- cx_Freeze Build Options ---
 
@@ -399,8 +342,7 @@ build_packages = [
     "certifi",
     "idna",
     "charset_normalizer",
-    "urllib3",
-    "mutagen",
+    "urllib3"
 ]  # Added mutagen as example
 
 # Add discovered packages, ensuring no duplicates
@@ -487,9 +429,12 @@ executables = [
 # --- Setup Execution ---
 
 logging.info("--- Running cx_Freeze setup ---")
+# GIT_VERSION from util.const now contains the uniform version string.
+logging.info(f"Using uniform version for package and build: {GIT_VERSION}")
+
 setup(
     name=SETTINGS_APP_NAME,
-    version=GIT_VERSION,
+    version=GIT_VERSION, # Use the uniform version from util.const
     description="A GUI frontend for yt-dlp",
     options={"build_exe": build_options},
     executables=executables,
