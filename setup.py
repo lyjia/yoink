@@ -162,8 +162,14 @@ class ImportFinder(ast.NodeVisitor):
 
     def visit_Import(self, node):
         for alias in node.names:
-            # Get the top-level package name (e.g., 'os' from 'os.path')
+            # Add the full import name and its top-level package
+            # e.g., for 'import xml.etree.ElementTree': add 'xml.etree.ElementTree' and 'xml'
+            self.imports.add(alias.name)
             self.imports.add(alias.name.split(".")[0])
+            # Optionally add intermediate parts too, though maybe overkill:
+            # parts = alias.name.split('.')
+            # for i in range(1, len(parts)):
+            #     self.imports.add('.'.join(parts[:i]))
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):
