@@ -1,9 +1,19 @@
-Yoink!
+# Yoink!
 
-A simple gui for yt-dlp by Lyjia and some AI
+A small Qt front end for yt-dlp. yt-dlp's own config file holds every
+yt-dlp setting; Yoink shows downloads in a table and stays out of the way.
 
-I am using this project to get the hang of agentic software development a.k.a. "vibe coding". At time of writing weapons of choice are [Roo Code](https://github.com/RooVetGit/Roo-Code) paired with [Gemini Pro 2.5 (Preview)](https://deepmind.google/technologies/gemini/)
+Design and roadmap: [docs/DESIGN.md](docs/DESIGN.md).
 
-To run it:
+## Running from source
 
-`python main.py` at a command prompt 
+Requires Python 3.11+ and a `yt-dlp` executable on PATH.
+
+```
+pip install -e .
+python -m yoink
+```
+
+## Status
+
+Phase 0: walking skeleton. Paste a URL, pick a directory, download, cancel.
