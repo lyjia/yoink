@@ -16,7 +16,12 @@ process; nothing from yt-dlp is imported into the Python process.
 3. **Never clobber the user's config.** Edits to the yt-dlp config are
    line-level and round-trip: comments, ordering, and lines Yoink does not
    understand are preserved byte for byte.
-4. **Keep it small.** Target under 1500 lines of application code. No plugin
+4. **Defaults equal an empty yt-dlp config.** A fresh Yoink install with no
+   yt-dlp config behaves exactly as `yt-dlp <url>` would from the OS
+   Downloads folder. Yoink adds nothing the user did not configure, with the
+   sole exception of the download directory, because a GUI app has no
+   meaningful working directory.
+5. **Keep it small.** Target under 1500 lines of application code. No plugin
    system, no database, no async framework.
 
 ## 2. Architecture
@@ -60,7 +65,7 @@ the config file before anything on the command line.
 ```
 yt-dlp
   [domain override extra args]          # section 5
-  -P <dir>                              # from main window, if non-empty
+  -P <dir>                              # see 2.3
   --cookies-from-browser <spec> | --no-cookies-from-browser   # section 4
   --no-simulate --progress --newline
   --progress-template "download:<YOINK-TSV>"
@@ -81,7 +86,19 @@ download:YOINK\tDL\t%(progress.status)s\t%(progress.downloaded_bytes)s\t%(progre
 exact flag behaviour and the postprocess template fields must be verified
 against the shipped binary during Phase 0.
 
-### 2.3 Download job (`job.py`)
+### 2.3 Effective download directory
+
+1. Directory field in the main window, if the user typed or picked one.
+2. Matching domain rule's `destination`.
+3. `--paths` / `-P` from the yt-dlp config: Yoink passes no `-P` and shows
+   that directory greyed as placeholder text in the field.
+4. Otherwise the OS Downloads folder (`QStandardPaths.DownloadLocation`),
+   passed as `-P`.
+
+Step 3 before step 4 is what keeps principle 4 intact: a user who set a
+directory in their config never has it overridden by a Yoink fallback.
+
+### 2.4 Download job (`job.py`)
 
 `DownloadJob(QObject)` owns one `QProcess`. It splits stdout on newlines,
 routes lines starting with `YOINK\t` to typed signals
@@ -162,7 +179,8 @@ Main window gets a checkbox **Use browser cookies** and a browser combo
 - The **browser spec** (browser, keyring, profile) is a yt-dlp-native value
   and lives in the yt-dlp config as `--cookies-from-browser`. Changing the
   combo on the main window writes that line.
-- The **on/off state** is a Yoink preference (QSettings). Off appends
+- The **on/off state** is a Yoink preference (QSettings), default off, per
+  principle 4. Off appends
   `--no-cookies-from-browser`, which overrides the config line. On appends
   `--cookies-from-browser <spec>` even if the config already has it, so the
   CLI and GUI agree.
@@ -198,13 +216,18 @@ Resolution per download:
 
 UI:
 
-- When a URL is pasted or typed, Yoink resolves the host, fills the
-  directory field from the matching rule (or leaves the last-used dir), and
-  shows the rule name in a small label next to the field.
-- A pin button next to the directory field saves the current directory as the
-  rule's `destination` for this host, creating the rule if needed.
-- The Domains tab in Preferences lists rules in a table: domain,
-  destination, cookies, extra args. Add / edit / remove.
+- The primary editor is the Domains tab in Preferences: a flat table with
+  one row per domain and one column per supported override (domain,
+  destination, cookies, extra args). Add / edit / remove rows in place.
+  New override types become new columns.
+- When a URL is pasted or typed, Yoink resolves the host and fills the
+  directory field per section 2.3, showing the matched domain in a small
+  label next to the field.
+- Optional shorthand: a pin button next to the directory field saves the
+  current directory as the rule's `destination` for this host. It has a
+  tooltip stating exactly what it will write, and it asks for confirmation
+  before replacing a destination that already exists for that domain.
+  Creating a new rule needs no confirmation.
 
 Not a goal: pattern matching beyond host suffix, per-URL-path rules, or
 rules that reference other rules.
@@ -259,13 +282,10 @@ row double-click, first tagged release.
 Concurrency limit and queue, playlist entries as child rows, clipboard watch,
 retry failed, drag-and-drop URLs, system tray, CI builds.
 
-## 9. Open questions
+## 9. Resolved questions
 
-- Should "Use browser cookies" default on or off for a fresh install? Off is
-  safer; on matches the stated primary use.
-- Should the pin button also offer to store the current cookies state as a
-  domain override, or keep pin to destination only?
-- Default-directory semantics when neither a rule nor the main window field
-  supplies one: let yt-dlp's config `-P` win, or fall back to the OS
-  Downloads folder? Proposed: let the config win, show the effective
-  directory greyed in the field.
+- Cookies toggle defaults off on a fresh install (principle 4).
+- Per-domain rules are edited in a flat table; the pin button is a
+  convenience with a tooltip and a confirmation on overwrite.
+- With no directory from the user, a rule, or the config, Yoink falls back to
+  the OS Downloads folder (section 2.3).
