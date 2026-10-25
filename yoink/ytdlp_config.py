@@ -16,6 +16,10 @@ from typing import NamedTuple
 COOKIES = "cookies"
 DIRECTORY = "directory"
 
+# Run with no URL. --no-cookies-from-browser keeps a config's browser cookie
+# database closed (no Keychain prompt); yt-dlp still lists that config's tokens.
+PROBE_ARGS = ["-v", "--no-update", "--no-cookies-from-browser"]
+
 
 @dataclass(frozen=True)
 class LoadedConfig:
@@ -83,6 +87,22 @@ def parse_probe(text: str) -> list[LoadedConfig] | None:
         else:
             loaded.append(config)
     return loaded if saw_command_line else None
+
+
+# yt-dlp's print_debug_header: the label from update._make_label, which is
+# "<channel>@<tag> from <origin>", "<origin>@<tag>", or "<origin>@<tag> build
+# <version>"; then "[<git head>]" and "(<variant>)", each optional. A variant
+# set by a repackager ends in "*"; an unknown one is left out.
+_VERSION = re.compile(
+    r"^\[debug\] yt-dlp version (?P<label>\S+)(?: from \S+| build (?P<build>\S+))?"
+    r"(?: \[[^\]]*\])?(?: \((?P<variant>[^)]*)\))?", re.M)
+
+
+def parse_version(text: str) -> tuple[str, str] | None:
+    """(version, variant) from the probe's debug header; variant may be ""."""
+    if not (m := _VERSION.search(text)):
+        return None
+    return m["build"] or m["label"].rpartition("@")[2], m["variant"] or ""
 
 
 # `--paths [TYPES:]PATH`, as split by yt-dlp's _dict_from_options_callback.
@@ -159,3 +179,21 @@ def find_conflicts(loaded: list[LoadedConfig]) -> list[Occurrence]:
         if len({o.path for o in occurrences}) > 1:
             conflicts += occurrences
     return conflicts
+
+
+@dataclass(frozen=True)
+class ConfigDefaults:
+    """What the main window shows while following the config (PHASE1.md 2.1, 2.2)."""
+
+    cookies: str | None  # for "Config default (...)"; None if unknown or disagreeing
+    directory: str | None  # the home path, if every occurrence agrees
+    sets_directory: bool  # some config sets a home path, so Yoink passes no -P
+
+
+def config_defaults(loaded: list[LoadedConfig] | None) -> ConfigDefaults:
+    """Interpret a probe result; None (probe failed) means nothing is known."""
+    if loaded is None:
+        return ConfigDefaults(None, None, False)
+    cookies, dirs = config_values(loaded, COOKIES), config_values(loaded, DIRECTORY)
+    return ConfigDefaults(shared_value(cookies) if cookies else "none",
+                          shared_value(dirs), bool(dirs))

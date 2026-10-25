@@ -3,11 +3,14 @@ import pytest
 from yoink.ytdlp_config import (
     COOKIES,
     DIRECTORY,
+    ConfigDefaults,
     LoadedConfig,
     Occurrence,
+    config_defaults,
     config_values,
     find_conflicts,
     parse_probe,
+    parse_version,
     shared_value,
 )
 
@@ -142,3 +145,42 @@ def test_find_conflicts_counts_files_not_values():
     assert find_conflicts(one_file) == []
     # temp-only -P is not a home path, so it does not conflict.
     assert find_conflicts([cfg("-P", "/x", path="/a"), cfg("-P", "temp:/t", path="/b")]) == []
+
+
+@pytest.mark.parametrize(("line", "expected"), [
+    ("stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", ("2026.10.21", "pip")),
+    ("stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4] (darwin_dir)", ("2026.10.21", "darwin_dir")),
+    ("nightly@2026.10.22.233505 from yt-dlp/yt-dlp-nightly-builds [0123abcde] (zip)",
+     ("2026.10.22.233505", "zip")),
+    ("stable@2026.03.17 from yt-dlp/yt-dlp (debian*)", ("2026.03.17", "debian*")),
+    ("someone/yt-dlp-fork@2026.10.21 [0123abcde] (source)", ("2026.10.21", "source")),
+    ("yt-dlp/yt-dlp@stable build 2026.10.21 [0123abcde] (pip)", ("2026.10.21", "pip")),
+    ("stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4]", ("2026.10.21", "")),  # unknown variant
+    ("stable@2026.10.21 from yt-dlp/yt-dlp", ("2026.10.21", "")),
+])
+def test_parse_version(line, expected):
+    probe = f"{CMDLINE}[debug] Encodings: locale UTF-8\n[debug] yt-dlp version {line}\n" \
+        "[debug] Python 3.12.11 (CPython arm64 64bit)\n"
+    assert parse_version(probe) == expected
+
+
+@pytest.mark.parametrize("text", ["", CMDLINE, "yt-dlp 2026.10.21\n", SAMPLE])
+def test_parse_version_missing(text):
+    assert parse_version(text) is None
+
+
+@pytest.mark.parametrize(("loaded", "expected"), [
+    (None, ConfigDefaults(None, None, False)),  # probe failed
+    ([], ConfigDefaults("none", None, False)),
+    ([cfg("--cookies-from-browser", "firefox", "-P", "/dl")], ConfigDefaults("firefox", "/dl", True)),
+    ([cfg("--no-cookies-from-browser", "-P", "temp:/t")], ConfigDefaults("none", None, False)),
+    ([cfg("-P", "/a", path="/a"), cfg("-P", "/b", path="/b", label="Included")],
+     ConfigDefaults("none", None, True)),
+    ([cfg("--cookies-from-browser", "safari", path="/a"),
+      cfg("--cookies-from-browser", "safari", "-P", "home:/x", path="/b")],
+     ConfigDefaults("safari", "/x", True)),
+    ([cfg("--cookies-from-browser", "safari", path="/a"),
+      cfg("--no-cookies-from-browser", path="/b")], ConfigDefaults(None, None, False)),
+])
+def test_config_defaults(loaded, expected):
+    assert config_defaults(loaded) == expected

@@ -2,10 +2,11 @@
 
 import logging
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QProcess, Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from yoink import __version__, app, argv, binary
+from yoink import __version__, app, argv, binary, ytdlp_config
 from yoink.job import DownloadJob, JobState, Progress
 
 log = logging.getLogger(__name__)
@@ -41,6 +42,8 @@ PITFALLS = {
     "safari": "Safari on macOS needs Full Disk Access.",
 }
 FOLLOWING = "Following the yt-dlp config."
+# The macOS single-file build takes ~6.5 s to start; a quarantined one may hang.
+PROBE_TIMEOUT_MS = 20_000
 
 
 def format_bytes(n: float | None) -> str:
@@ -59,11 +62,15 @@ class MainWindow(QMainWindow):
         self.settings = app.settings()
         self.jobs: list[DownloadJob] = []  # index == table row
         self.binary_path = binary.find_binary(self.settings.value(app.KEY_BINARY_PATH))
+        # Last config probe result (docs/PHASE1.md 1.1); None until it succeeds.
+        self.loaded_configs: list[ytdlp_config.LoadedConfig] | None = None
+        self.config_defaults = ytdlp_config.config_defaults(None)
+        self._probe: QProcess | None = None
 
         self.setWindowTitle(f"{app.APP_TITLE} {__version__}")
         self._build_ui()
         self._restore_state()
-        self._report_binary()
+        self.refresh_config()
 
     # ---- construction -----------------------------------------------------
 
@@ -127,6 +134,7 @@ class MainWindow(QMainWindow):
 
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction("Clear finished", self.clear_finished)
+        file_menu.addAction("Refresh config", self.refresh_config)
         file_menu.addSeparator()
         file_menu.addAction("E&xit", self.close)
         help_menu = self.menuBar().addMenu("&Help")
@@ -146,20 +154,62 @@ class MainWindow(QMainWindow):
         i = self.cookies_combo.findData(self.settings.value(app.KEY_COOKIES, ""))
         self.cookies_combo.setCurrentIndex(max(i, 0))
 
-    def _report_binary(self) -> None:
+    # ---- config probe -----------------------------------------------------
+
+    def refresh_config(self) -> None:
+        """Ask yt-dlp which configs it loads; the answer arrives in _probe_done."""
         if not self.binary_path:
             self.status_label.setText("yt-dlp not found on PATH")
             self.start_btn.setEnabled(False)
             return
-        ver = binary.get_version(self.binary_path) or "unknown version"
-        self.status_label.setText(f"yt-dlp {ver}")
+        self.status_label.setText("Checking yt-dlp…")
         self.status_label.setToolTip(str(self.binary_path))
+        if self._probe:  # superseded; _probe_done ignores its result
+            self._probe.kill()
+        self._probe = proc = QProcess(self)
+        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        # As for downloads: yt-dlp looks for a "Home" config in the working directory.
+        proc.setWorkingDirectory(argv.default_download_dir())
+        proc.finished.connect(
+            lambda _, status: self._probe_done(proc, status == QProcess.ExitStatus.NormalExit)
+        )
+        proc.errorOccurred.connect(
+            lambda e: e == QProcess.ProcessError.FailedToStart and self._probe_done(proc, False)
+        )
+        proc.start(str(self.binary_path), ytdlp_config.PROBE_ARGS)
+        proc.closeWriteChannel()  # so `--config-locations -` reads EOF instead of hanging
+        QTimer.singleShot(PROBE_TIMEOUT_MS, proc, proc.kill)
+
+    def _probe_done(self, proc: QProcess, exited: bool) -> None:
+        proc.deleteLater()
+        if proc is not self._probe:
+            return
+        self._probe = None
+        text = bytes(proc.readAll()).decode("utf-8", "replace")
+        # A killed probe may have listed some config files but not all of them.
+        self.loaded_configs = ytdlp_config.parse_probe(text) if exited else None
+        if self.loaded_configs is None:
+            log.warning("Config probe failed:\n%s", text.strip())
+        d = self.config_defaults = ytdlp_config.config_defaults(self.loaded_configs)
+        self._set_config_cookies(d.cookies)
+        fallback = "Set by yt-dlp config" if d.sets_directory else argv.default_download_dir()
+        self.dir_edit.setPlaceholderText(d.directory or fallback)
+        self._overrides_changed()
+
+        if ver := ytdlp_config.parse_version(text):
+            status = f"yt-dlp {ver[0]} ({ver[1]})" if ver[1] else f"yt-dlp {ver[0]}"
+        else:
+            status = "yt-dlp unknown version"
+        if self.loaded_configs is None:
+            status = f"{status}, config: unknown" if ver else "yt-dlp config: unknown"
+        self.status_label.setText(status)
 
     # ---- overrides --------------------------------------------------------
 
     def _set_config_cookies(self, value: str | None) -> None:
         """Label the first combo item with the config's cookies value, if known."""
         self.cookies_combo.setItemText(0, f"Config default ({value})" if value else "Config default")
+        self.config_cookies = value
 
     def _overrides_changed(self) -> None:
         directory = self.dir_edit.text().strip()
@@ -172,6 +222,11 @@ class MainWindow(QMainWindow):
         )
         if not cookies:
             tip = FOLLOWING
+            # The spec is BROWSER[+KEYRING][:PROFILE][::CONTAINER].
+            if (spec := self.config_cookies) and spec != "none":
+                tip += f" It reads cookies from {spec}."
+                if (browser := re.split("[+:]", spec)[0]) in PITFALLS:
+                    tip += "\n" + PITFALLS[browser]
         elif cookies == "none":
             tip = "Overriding the yt-dlp config: no browser cookies."
         else:
@@ -201,8 +256,11 @@ class MainWindow(QMainWindow):
         if not self.binary_path:
             QMessageBox.warning(self, app.APP_TITLE, "yt-dlp was not found on PATH.")
             return
-        directory = self.dir_edit.text().strip() or argv.default_download_dir()
-        if not os.path.isdir(directory):
+        # Empty follows the config: no -P if it sets a home path, else Downloads.
+        directory = self.dir_edit.text().strip()
+        if not directory and not self.config_defaults.sets_directory:
+            directory = argv.default_download_dir()
+        if directory and not os.path.isdir(directory):
             QMessageBox.warning(self, app.APP_TITLE, f"Directory does not exist:\n{directory}")
             return
 
@@ -293,6 +351,10 @@ class MainWindow(QMainWindow):
         self.settings.setValue(app.KEY_GEOMETRY, self.saveGeometry())
         self.settings.setValue(app.KEY_DIR, self.dir_edit.text().strip())
         self.settings.setValue(app.KEY_COOKIES, self.cookies_combo.currentData())
+        if proc := self._probe:
+            self._probe = None  # so _probe_done ignores it
+            proc.kill()
+            proc.waitForFinished(1000)
         for job in self.jobs:
             job.cancel()
         super().closeEvent(event)
