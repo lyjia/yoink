@@ -325,8 +325,7 @@ Yoink looks in this order and stops at the first hit:
    launchd's PATH, `/usr/bin:/bin:/usr/sbin:/sbin` (checked on this
    machine), so a packaged Yoink.app would never see a Homebrew or pipx
    install through PATH alone.
-5. Nothing found: offer the managed download (Phase 4), or a file picker
-   in Preferences.
+5. Nothing found: open the setup screen (6.7).
 
 Preferences lists every candidate found, with its version and install
 method, so the user can choose between several installs. The status bar
@@ -497,12 +496,36 @@ binary path):
 
 The same applies to any binary the user chooses in Preferences (Phase 2).
 
-**Open question: a friendly setup flow**
+### 6.7 Onboarding: first-run setup (Phase 4)
 
-Undecided. When Yoink finds no usable yt-dlp, or finds one Gatekeeper will
-block, it probably needs a setup screen that walks the user to a working
-install instead of just reporting an error. Options under consideration,
-none chosen:
+Most of the friction a new user meets is getting a working yt-dlp, not
+using Yoink. Instead of a "yt-dlp not found" message in the status bar,
+Yoink walks the user to a working install with a setup screen. The same
+screen stays reachable later through Help > Set up yt-dlp….
+
+**When it appears**
+
+| Situation | How Yoink knows | Behaviour |
+|-----------|-----------------|-----------|
+| No yt-dlp found | discovery (6.2) finds nothing | setup screen |
+| Found, but macOS will block it | quarantine flag on the binary or `_internal/` (6.6) | setup screen offering repair (C) |
+| Found, but it doesn't run | the probe fails: SIGKILL with no output (6.6), a zipapp with too old a Python (6.1), or a crash | setup screen with yt-dlp's error text |
+| Found and working, but stale or slow | the probe's staleness warning; `darwin_exe` (6.3) | non-blocking status-bar notice linking to the screen |
+
+**Flow**
+
+1. Say in one sentence what is wrong ("Yoink needs yt-dlp to download
+   videos, and couldn't find it"), then list the options below in order
+   of preference for the platform.
+2. After any action, run discovery and the probe again. If they succeed,
+   show the version and install method, then close.
+3. Run the warm-up before closing (6.6), so the first download doesn't
+   pay the 6 s first launch.
+4. Never leave the user at a dead end. Each failure leads back to the
+   screen with yt-dlp's own error text and the remaining options.
+
+**Options on macOS** (decision pending):
+
 
 - **A. Homebrew guidance.**
   - If `brew` exists (`/opt/homebrew/bin/brew` or `/usr/local/bin/brew`),
@@ -513,7 +536,7 @@ none chosen:
     ask of a non-technical user.
   - Updates later go through `brew upgrade` (6.4).
 - **B. Yoink downloads its own copy (6.5).** One button, no Gatekeeper
-  prompts (tested above), and checksum-verified. The costs: 123 MB, Yoink
+  prompts (tested in 6.6), and checksum-verified. The costs: 123 MB, Yoink
   takes on updates, and Yoink downloads and runs an unnotarized binary on
   the user's behalf.
 - **C. Repair a blocked copy.** If the user already downloaded a release
@@ -556,9 +579,37 @@ none chosen:
 - **D. pip, pipx, or uv.** Not for typical users: they need Python 3.10
   or later, and stock macOS has 3.9.6.
 
+
 A likely shape: offer B as the default and A as "I prefer Homebrew", and
 show C only when a quarantined copy is detected. This needs a decision
-before Phase 4, and possibly before Phase 2's binary picker.
+before Phase 4 starts, and possibly before Phase 2's binary picker.
+
+**Other platforms**
+
+- Windows:
+  - B (managed `yt-dlp.exe`, which can update itself with `-U`, 6.4).
+  - Package-manager guidance, shown when one is detected:
+    `winget install yt-dlp.yt-dlp`, `scoop install yt-dlp`, or
+    `choco install yt-dlp`.
+  - Still to check: whether a browser-downloaded `yt-dlp.exe` carrying a
+    Mark-of-the-Web triggers SmartScreen when Yoink launches it with
+    `CreateProcess`.
+- Linux:
+  - B (managed `yt-dlp_linux`).
+  - Guidance for pipx, or for the distribution's package. Distribution
+    packages are often months behind, so the staleness notice matters
+    most here.
+
+**Testing**
+
+The sandbox (`scripts/sandbox.sh`) needs to cover each trigger:
+
+- **No yt-dlp:** a PATH without yt-dlp, and no binary path setting.
+- **Quarantined copy:** add the flag to a copy with
+  `xattr -w com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" <file>`.
+- **Non-running binary:** a binary path pointing at `/usr/bin/false`.
+- **Stale version:** a fake binary script that prints the probe output,
+  including the staleness warning.
 
 ## 7. Packaging
 
@@ -590,8 +641,8 @@ URL, watch it download, cancel it.
 
 **Phase 1: Main-window overrides and cookies.**
 Config probe (3.4), which also provides the yt-dlp version shown in the
-status bar (6.3) instead of the blocking `--version` call. Cookies combo and directory field as override controls,
-a Reset button, and restoring overrides on the next launch. Honour `-P` from
+status bar (6.3) instead of the blocking `--version` call. Cookies combo
+and directory field as override controls, a Reset button, and restoring overrides on the next launch. Honour `-P` from
 the config (2.3). Overrides indicator and dialog. No config writes. Scope:
 [PHASE1.md](PHASE1.md).
 
@@ -608,11 +659,29 @@ macOS single-file build. Update button per 6.4.
 `overrides.py`, Domains tab, URL-driven directory prefill, pin button,
 cookies override. `argv.py` grows the resolution order from section 5.
 
-**Phase 4: Distribution.**
-Managed binary download and update (on macOS, the folder build with
-checksum verification and a quarantine check, sections 6.5 and 6.6), Nuitka build
-scripts, macOS signing and notarization or documented "Open Anyway" steps
-(section 7), a log viewer on row double-click, first tagged release.
+**Phase 4: Onboarding.**
+Decide the setup-flow options first (6.7). Then build:
+
+- The first-run setup screen and its triggers (6.7), including Help > Set
+  up yt-dlp….
+- The managed binary download and update (6.5). On macOS that is the
+  folder build with checksum verification and a warm-up (6.6).
+- Quarantine detection before launch, and recognising the SIGKILL pattern
+  after launch.
+- The confirmed repair flow (6.6, option C).
+- Homebrew and package-manager guidance.
+- Discovery in well-known locations (6.2), if Phase 2 hasn't already added
+  it.
+- Sandbox coverage for each trigger.
+
+Deliverable: on a Mac with no yt-dlp, or with a browser-downloaded and
+blocked copy, a new user gets from first launch to a working download
+without opening Terminal or System Settings.
+
+**Phase 5: Distribution.**
+Nuitka build scripts, macOS signing and notarization or documented "Open
+Anyway" steps (section 7), a log viewer on row double-click, first tagged
+release.
 
 **Backlog, unscheduled.**
 Concurrency limit and queue, playlist entries as child rows, clipboard watch,
