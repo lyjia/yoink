@@ -52,10 +52,27 @@ exits on "You must provide at least one URL". Tested against 2026.03.17:
 
 ### 1.3 Override warnings
 
-When another loaded config also contains `--cookies-from-browser` or
-`--no-cookies-from-browser`, the main window shows a one-line warning:
-"Also set in `<path>` (`<label>` config). yt-dlp decides which applies."
-Yoink does not compute the winner.
+An override happens when an option Yoink manages appears in a loaded
+config other than the one Yoink edits. In Phase 1 that means
+`--cookies-from-browser` or `--no-cookies-from-browser`.
+
+When there is at least one override, the status bar shows a yellow warning
+icon (`QStyle.StandardPixmap.SP_MessageBoxWarning`, 16 px) next to
+link-styled text reading **Some configuration values overridden**. Both
+are hidden when there are no overrides. Clicking the text opens a small
+dialog that lists:
+
+- the file Yoink edits, and its label from the probe
+- a table with one row for each place a managed option appears: the
+  option, its value, the file, and that file's label (User, Portable,
+  Home, System, or Custom)
+- a note that yt-dlp decides which value applies, that downloads started
+  from Yoink always use the main-window setting, and that only plain
+  `yt-dlp` runs are affected
+
+Yoink does not compute the winner. The indicator and the dialog are
+generic over "managed options", so Phase 2 can add options to that list
+without any new UI.
 
 This only affects plain CLI use. Yoink always passes either
 `--cookies-from-browser <spec>` or `--no-cookies-from-browser` on the
@@ -96,6 +113,12 @@ explains why.
   probe output. `MainWindow` runs the process through `QProcess` and passes
   the output in. `LoadedConfig(label, path, tokens)`.
 - `default_user_config() -> Path`: the DESIGN.md 3.1 path.
+- `MANAGED = ["--cookies-from-browser", "--no-cookies-from-browser"]`, which
+  Phase 2 extends.
+- `find_overrides(loaded, own_path) -> list[Override]`: every occurrence
+  of a `MANAGED` option in a loaded config other than `own_path`.
+  `Override(option, value, path, label)`. It is pure and does not rank the
+  results.
 - Line model from DESIGN.md 3.2: `Blank`, `Comment`, `Option(name, value,
   raw)`, `Opaque(raw)`. An `Option` is a line holding one long option with
   at most one value, written as either `--opt value` or `--opt=value`.
@@ -145,9 +168,9 @@ explains why.
 
 ### 2.6 `yoink/ui/main_window.py` (~70 lines)
 
-- A row with a **Use browser cookies** checkbox, a browser combo, and the
-  override warning label from 1.3, hidden when there is nothing to warn
-  about.
+- A row with a **Use browser cookies** checkbox and a browser combo.
+- The override indicator from 1.3 in the status bar, left of the yt-dlp
+  version.
 - On startup and after each write: run the probe, choose the file per 1.2,
   load it, run the 1.5 check, prefill the combo, and set the tooltip to the
   full spec and the file path.
@@ -160,7 +183,16 @@ explains why.
   - Chrome on Windows 127+ needs a current yt-dlp.
   - Safari on macOS needs Full Disk Access.
 
-### 2.7 Tests (new)
+### 2.7 `yoink/ui/config_notice.py` (new, ~50 lines)
+
+- `ConfigNoticeDialog(own_path, own_label, overrides)`: the dialog from
+  1.3, a `QDialog` holding a header label, a read-only `QTableWidget`, the
+  note, and a Close button.
+- The status-bar indicator is an icon `QLabel` plus a text `QLabel` with
+  `linkActivated` connected to open the dialog. It lives in
+  `main_window.py`.
+
+### 2.8 Tests (new)
 
 Add pytest as a uv dev dependency and `tests/test_ytdlp_config.py`:
 
@@ -169,6 +201,8 @@ Add pytest as a uv dev dependency and `tests/test_ytdlp_config.py`:
   trailing comments
 - `set` on the space form, the `=` form, a duplicated option, and an
   absent option
+- `find_overrides`: none; the same option in a Portable or System config;
+  `own_path` excluded; both the `--opt value` and `--opt=value` token forms
 - probe-output parsing: the captured sample above, a path with spaces, a
   non-ASCII path, and garbage input
 - `matches` against tokens produced by `shlex.split(..., comments=True)`,
@@ -215,15 +249,16 @@ Recommendation: (a).
 
 ## 6. Estimate
 
-About 280 lines of application code and 170 of tests. That brings the app
-to about 860 of its 1500-line budget.
+About 340 lines of application code and 190 of tests. That brings the app
+to about 920 of its 1500-line budget.
 
 Suggested commits:
 
 1. `ytdlp_config.py` (probe parser, line model, writer) and its tests
 2. argv cookies flags, dropping `--quiet`, and job cookie-line parsing,
    checked against the real binary
-3. main-window checkbox, combo, warning label, and row cookie display
+3. main-window checkbox, combo, override indicator and dialog, and row
+   cookie display
 4. `-P` handling (if accepted)
 5. DESIGN.md: section 3.1 becomes "the user config yt-dlp reports, else
    this path"; add the probe and the ground-truth rule
