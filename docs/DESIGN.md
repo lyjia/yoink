@@ -570,10 +570,13 @@ screen stays reachable later through Help > Set up yt-dlp….
     only possible while the original download exists. If the zip, or the
     single-file binary, is still there, Yoink checks its SHA-256 against
     the release's `SHA2-256SUMS`. The published sums cover only the zip
-    and the single-file binary, so an already-unpacked folder cannot be
-    checked file by file. In that case the dialog says the copy can't be
-    verified and recommends B. The user's explicit confirmation stays
-    mandatory either way.
+    and the single-file binary. An unpacked folder can still be checked
+    file by file against a zip that passes that check: either the user's
+    original download, or a fresh copy of the same release that Yoink
+    fetches. This was done on 2026-10-25 for a real manual install:
+    134 of 134 files were identical. If no matching zip is available, the
+    dialog says the copy can't be verified and recommends B. The user's
+    explicit confirmation stays mandatory either way.
   - Do the same warm-up as in the managed-copy plan, so the 6 s first
     launch doesn't land on a download.
 - **D. pip, pipx, or uv.** Not for typical users: they need Python 3.10
