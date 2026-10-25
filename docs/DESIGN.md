@@ -274,16 +274,121 @@ rules that reference other rules.
 
 ## 6. Binary management (`binary.py`)
 
-Resolution order: QSettings override path, `yt-dlp` on PATH, Yoink-managed
-copy in the app-data dir. If none, offer to download the platform asset
-(`yt-dlp`, `yt-dlp.exe`, or `yt-dlp_macos.zip` on macOS, see 6.1) from the
-latest GitHub release, and verify it against the release's `SHA2-256SUMS`.
-Update uses the binary's own `-U` when it is the managed copy or writable,
-except on macOS (6.1); otherwise the UI says to update via the package
-manager that installed it. Version string comes from `yt-dlp --version`,
-shown in the status bar.
+Users install yt-dlp in many different ways, and Yoink has to work with
+whichever one they used, without asking them to reinstall. Yoink never
+changes how yt-dlp was installed. It finds the binary (6.2), asks yt-dlp
+what kind of build it is (6.3), and fits updates and warnings to that
+(6.4). It downloads a copy of its own only when the user agrees (6.5).
 
-### 6.1 macOS: Gatekeeper and quarantine
+### 6.1 Install methods
+
+The startup times were measured on macOS 15.8.2 with yt-dlp 2026.10.21.
+The other values come from yt-dlp's `update.py`.
+
+| Method | Typical location | yt-dlp reports | Startup | Updated by |
+|--------|------------------|----------------|---------|------------|
+| Homebrew | `/opt/homebrew/bin` (Apple silicon), `/usr/local/bin` (Intel), linked from `Cellar/` | `(pip)` | fast | `brew upgrade yt-dlp` |
+| pip, pipx, uv tool | a venv's `bin/`, `~/.local/bin` | `(pip)` | fast | the same tool |
+| MacPorts, Linux distro packages | `/opt/local/bin`, `/usr/bin` | `(pip)`, or a packager's own variant marked `*` | fast | the package manager |
+| Single-file binary: `yt-dlp_macos`, `yt-dlp_linux`, `yt-dlp.exe` | wherever the user saved it | `(darwin_exe)`, `(linux_exe)`, `(win_exe)` | macOS: **6.5–6.8 s on every launch** | `-U`, if the file is writable |
+| Folder build: `yt-dlp_macos.zip` and the other platforms' equivalents | wherever the user unpacked it | `(darwin_dir)` and the like | 6.6 s on the first launch, then 0.19 s | re-download only; `-U` refuses |
+| Python zipapp: `yt-dlp` | anywhere | `(zip)` | fast | `-U` |
+| Yoink-managed (Phase 4) | `<appdata>/yt-dlp/<version>/` | `(darwin_dir)` on macOS | as for the folder build | Yoink re-downloads it (6.5) |
+
+Notes:
+
+- On macOS, single-file binaries and folder builds downloaded in a
+  browser are quarantined and blocked by Gatekeeper (6.6). Homebrew,
+  pip, and copies Yoink downloads itself are not.
+- The zipapp needs Python 3.10 or later on PATH. The `python3` that comes
+  with Apple's Command Line Tools is 3.9.6, so on a stock Mac the zipapp
+  does not run.
+- One machine can have several installs at once, for example a stale
+  Homebrew copy alongside a newer single-file binary.
+
+### 6.2 Finding the binary
+
+Yoink looks in this order and stops at the first hit:
+
+1. The binary path set in Preferences.
+2. The Yoink-managed copy, if there is one. It comes before PATH because
+   the user chose it, possibly to get away from a blocked or stale copy on
+   PATH (6.6).
+3. `yt-dlp` on PATH.
+4. Well-known locations that might not be on PATH: `/opt/homebrew/bin`,
+   `/usr/local/bin`, `/opt/local/bin`, `~/.local/bin`, and `~/bin`, plus the
+   usual winget, Scoop, and Chocolatey shim directories on Windows. This
+   step matters on macOS. An app launched from Finder or the Dock gets
+   launchd's PATH, `/usr/bin:/bin:/usr/sbin:/sbin` (checked on this
+   machine), so a packaged Yoink.app would never see a Homebrew or pipx
+   install through PATH alone.
+5. Nothing found: offer the managed download (Phase 4), or a file picker
+   in Preferences.
+
+Preferences lists every candidate found, with its version and install
+method, so the user can choose between several installs. The status bar
+shows the binary in use and its method.
+
+PATH entries are often symlinks; Homebrew's always are. Yoink launches the
+path as it found it and resolves the link only to identify the install
+method. A folder build symlinked onto PATH has not been verified yet:
+PyInstaller has to find `_internal/` through the link.
+
+### 6.3 Identifying the build
+
+The config probe (3.4) already runs `yt-dlp -v`, and its debug header says
+which build yt-dlp is:
+
+```
+[debug] yt-dlp version stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4] (darwin_dir)
+```
+
+From this line Yoink takes the version, channel, and variant. A trailing
+`*` means a repackager set its own variant. The probe replaces the
+separate `yt-dlp --version` call, which costs 6.5 s on the macOS single-file
+build and runs on the UI thread in Phase 0.
+
+`(pip)` covers pip, pipx, uv, and Homebrew alike, so Yoink narrows it down
+using the resolved path:
+
+| Path contains | Install method |
+|---------------|----------------|
+| `/Cellar/` | Homebrew |
+| `/opt/local/` | MacPorts |
+| `pipx/venvs` | pipx |
+| `uv/tools` | uv tool |
+| anything else | pip |
+
+The probe also passes on yt-dlp's own staleness warning ("Your yt-dlp
+version (…) is older than 90 days!"). Yoink shows it in the status bar,
+because an old yt-dlp is the usual reason that sites and cookie extraction
+break.
+
+On the macOS single-file build (`darwin_exe`), the status bar warns that
+each download starts about 6 s late, and suggests the folder build or
+Yoink's own copy.
+
+### 6.4 Updating
+
+Yoink offers an update action only when yt-dlp itself supports one, and
+otherwise tells the user what to run:
+
+| Variant | Update button does |
+|---------|--------------------|
+| `zip`, `*_exe` (the variants yt-dlp can update) | runs `-U` if the binary is writable, shows its output, and runs the probe again |
+| `*_dir`, user's own copy | explains that yt-dlp can't update this build itself, and offers to switch to Yoink's copy |
+| `*_dir`, Yoink-managed | Yoink re-downloads it (6.5) |
+| `pip` | shows the right command for the detected method (`brew upgrade yt-dlp`, `pipx upgrade yt-dlp`, `uv tool upgrade yt-dlp`, or `python3 -m pip install -U yt-dlp`) with a Copy button; Yoink never runs package managers itself |
+| starred or unknown | shows yt-dlp's own update hint |
+
+### 6.5 Yoink-managed copy (Phase 4)
+
+If the user agrees, Yoink downloads the platform asset from the latest
+GitHub release and checks it against the release's `SHA2-256SUMS`:
+`yt-dlp_macos.zip` on macOS (the reason is in 6.6), `yt-dlp_linux` on
+Linux, and `yt-dlp.exe` on Windows. The procedure on macOS is in 6.6.
+
+### 6.6 macOS: Gatekeeper and quarantine
 
 Getting yt-dlp onto a Mac by hand is a real failure point for users, and
 the most likely reason a new user reports "Yoink doesn't work". The facts
@@ -372,15 +477,15 @@ yt-dlp binary is not bundled; it is fetched on first run or found on PATH.
 Build scripts for Linux and Windows live under `build/`. CI builds are
 backlog.
 
-macOS: Yoink.app runs into the same Gatekeeper problem as yt-dlp (6.1). An
+macOS: Yoink.app runs into the same Gatekeeper problem as yt-dlp (6.6). An
 unsigned app downloaded in a browser is blocked until the user clicks
 "Open Anyway" in Privacy & Security. Removing that friction takes a
 Developer ID certificate (Apple Developer Program) plus notarization in the
 release build. Until then, the release notes must spell out the "Open
 Anyway" steps. Prefer the standalone `.app` over `--onefile` on macOS,
-because the onefile startup penalty measured for yt-dlp (6.1) applies here
+because the onefile startup penalty measured for yt-dlp (6.6) applies here
 too. A notarized Yoink must not set `LSFileQuarantineEnabled`, or the
-yt-dlp it downloads would be quarantined (6.1).
+yt-dlp it downloads would be quarantined (6.6).
 
 ## 8. Phases
 
@@ -394,16 +499,20 @@ template and `--print` behaviour against a real binary. Deliverable: paste a
 URL, watch it download, cancel it.
 
 **Phase 1: Main-window overrides and cookies.**
-Config probe (3.4). Cookies combo and directory field as override controls,
+Config probe (3.4), which also provides the yt-dlp version shown in the
+status bar (6.3) instead of the blocking `--version` call. Cookies combo and directory field as override controls,
 a Reset button, and restoring overrides on the next launch. Honour `-P` from
 the config (2.3). Overrides indicator and dialog. No config writes. Scope:
 [PHASE1.md](PHASE1.md).
 
 **Phase 2: Preferences dialog.**
-Yoink tab (binary path, update policy). yt-dlp tab with the structured
-view, "Other options" list, and raw text tab. This is the first config
-write: the line model, round-trip writer, and consistency check (3.2,
-3.4). Status bar shows yt-dlp version; Update button.
+Yoink tab: binary path, with every candidate found by 6.2 listed along
+with its version and install method, and update policy. yt-dlp tab with
+the structured view, "Other options" list, and raw text tab. This is the
+first config write: the line model, round-trip writer, and consistency
+check (3.2, 3.4). Status bar shows the yt-dlp version and install method
+(6.3), yt-dlp's staleness warning, and the slow-start warning for the
+macOS single-file build. Update button per 6.4.
 
 **Phase 3: Per-domain overrides.**
 `overrides.py`, Domains tab, URL-driven directory prefill, pin button,
@@ -411,7 +520,7 @@ cookies override. `argv.py` grows the resolution order from section 5.
 
 **Phase 4: Distribution.**
 Managed binary download and update (on macOS, the folder build with
-checksum verification and a quarantine check, section 6.1), Nuitka build
+checksum verification and a quarantine check, sections 6.5 and 6.6), Nuitka build
 scripts, macOS signing and notarization or documented "Open Anyway" steps
 (section 7), a log viewer on row double-click, first tagged release.
 

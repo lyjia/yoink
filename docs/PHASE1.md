@@ -280,7 +280,7 @@ Done when:
 - A restart restores the overrides.
 - An existing Phase 0 `last_dir` value shows up in the field.
 
-### T5. Config probe in the UI (~40 lines)
+### T5. Config probe in the UI (~50 lines)
 
 - Run the probe `QProcess` at startup and from File > Refresh config, with
   results going to `MainWindow.loaded_configs`.
@@ -290,6 +290,16 @@ Done when:
   `-P`.
 - Probe failure: "Config default" with no value, "yt-dlp config: unknown"
   in the status bar, and the Downloads folder as the fallback.
+- Version from the probe (DESIGN.md 6.3): add
+  `parse_version(text) -> tuple[str, str] | None` (version and variant) to
+  `ytdlp_config.py`, with tests, and show "yt-dlp <version> (<variant>)" in
+  the status bar. Remove the synchronous `binary.get_version` call from
+  `MainWindow.__init__`, which blocks startup for 6.5 s with the macOS
+  single-file build. Until the probe returns, the status bar reads
+  "Checking yt-dlp…". The install-method label and staleness warning come
+  in Phase 2.
+- Close the probe's stdin as soon as it starts, so a config containing
+  `--config-locations -` can't hang it.
 
 Done when these sandbox checks pass:
 - No config: "Config default (none)", the Downloads placeholder, and files
@@ -303,6 +313,9 @@ Done when these sandbox checks pass:
   a restart.
 - Binary path pointed at `/usr/bin/false`: the unknown state appears and
   the app does not crash.
+- The status bar shows the version and variant, for example
+  `2026.10.21 (pip)`, and the window appears immediately instead of
+  waiting for yt-dlp.
 
 ### T6. Override indicator and dialog (~60 lines)
 
