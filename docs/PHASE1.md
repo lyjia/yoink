@@ -1,5 +1,67 @@
 # Phase 1 scope: main-window overrides and cookies
 
+## Status
+
+Implemented on branch `phase-1-cookies-toggle`. `uv run pytest` passes
+(72 tests). Application code is about 1010 lines, comments and blank lines
+included.
+
+| Task | Commit |
+|------|--------|
+| Scope | `da5fe54`, `ecae052`, `febf7f0`, `74535ea`, `4dd6335`, `4674a28` |
+| T0 | `4fb1229` |
+| T1 | `1a12905` |
+| T2 | `6cfb30f` |
+| T4 | `ef428ab` |
+| Sandbox and IDE run configs | `9451d22` |
+| T5 | `2c0e409` |
+| T6 | `9bb3e78` |
+| T7 | the docs commit that adds this note |
+
+The macOS Gatekeeper design commits on the same branch (`43fdcf6` to
+`6cd44e6`) are not Phase 1 work.
+
+Dropped: T3, per-row cookie reporting (`4674a28`). Phase 0's `--quiet`
+stays, and a cookie failure shows only through the row's error text.
+
+Changed or added during implementation (DESIGN.md 2.1 and 3.4 have the
+details):
+
+- Download is disabled while the probe runs. Until it reports, an empty
+  directory field can't tell "pass no `-P`" from "pass Downloads".
+- The probe has a 20 s timeout, and its working directory is the
+  Downloads folder too, because yt-dlp looks for a Home config there.
+- `parse_probe` also returns `None` when yt-dlp reports any error other
+  than the missing URL, or prints no `Command-line config` line. A probe
+  that is killed or times out counts as failed even if it listed some
+  files.
+- A failed **Refresh config** resets to the unknown state. It does not
+  keep the previous result.
+- The unknown state reads "yt-dlp <version> (<variant>), config: unknown"
+  when the version could still be parsed, and "yt-dlp config: unknown"
+  otherwise.
+- `YOINK_SETTINGS_DIR` moves QSettings into an INI file, so the sandbox
+  doesn't touch the real settings. The sandbox gained `--pypi-yt-dlp`,
+  `--yt-dlp PATH`, `--clean`, and `--dry-run`.
+- On macOS the sandbox can't redirect the Downloads folder:
+  `QStandardPaths` ignores `$HOME`. Checks that expect files in the sandbox
+  Downloads folder hold on Linux. On macOS, type the sandbox path into the
+  directory field.
+
+The T4–T6 "done when" checks were run headlessly (Qt offscreen, scripted
+by the implementing agents, with a PyPI yt-dlp, a temp HOME and temp
+settings). Nobody has yet clicked through them in the visible GUI.
+
+Remaining for the exit check:
+
+- A manual click-through of the T4–T6 checks in the real window, using
+  the "Yoink (sandbox)" run configuration.
+- One real cookie-gated download by hand, with a browser chosen in the
+  combo.
+- A real download from the developer's normal environment, once the
+  yt-dlp on their PATH runs (it is currently blocked by Gatekeeper,
+  DESIGN.md 6.6).
+
 Source: [DESIGN.md](DESIGN.md) section 8, Phase 1, plus sections 2.3, 3.4,
 and 4.
 

@@ -64,6 +64,10 @@ Dependencies: PySide6, requests (binary download only). Python 3.11+.
 Per-domain rules are a list of structured records; QSettings handles those
 poorly, so they get a JSON file next to the QSettings store.
 
+If `YOINK_SETTINGS_DIR` is set, QSettings is stored as `yoink.ini` in that
+directory instead of the OS-native store. The sandbox
+(`scripts/sandbox.sh`) uses it, because on macOS QSettings ignores `$HOME`.
+
 ### 2.2 Command line assembly (`argv.py`)
 
 Order matters because later flags override earlier ones, and yt-dlp applies
@@ -74,7 +78,7 @@ yt-dlp
   [domain override extra args]          # section 5
   [-P <dir>]                            # see 2.3
   [--cookies-from-browser <browser> | --no-cookies-from-browser]  # section 4
-  --no-simulate --progress --newline
+  --no-simulate --progress --newline --quiet
   --progress-template "download:<YOINK-TSV>"
   --progress-template "postprocess:<YOINK-PP-TSV>"
   --print "before_dl:YOINK\tFILE\t%(filename)s"
@@ -120,9 +124,12 @@ else to an in-memory log. States: `queued`, `starting`, `downloading`,
 no `DONE` line means `failed`; the last stderr lines become the row's error
 text.
 
-If a user config contains `--quiet` or `--no-progress`, no progress lines
-arrive. The job then stays in `starting` with an indeterminate bar until
-`DONE` or exit. This is treated as supported, not an error.
+Yoink passes `--progress` on the command line, which beats `--quiet` or
+`--no-progress` in a user config, so the protocol lines still arrive.
+Phase 0 checked this for `--quiet`; a config's `--no-progress` has not
+been tested. If progress lines don't arrive anyway, the job stays in
+`starting` with an indeterminate bar until `DONE` or exit. This is treated
+as supported, not an error.
 
 Playlists: each entry produces its own `FILE`/`DL`/`DONE` sequence. Phase 0
 shows them in one row with the current filename; splitting into child rows
@@ -191,6 +198,40 @@ loaded and their contents, using yt-dlp's own tokenization. The
 `--no-cookies-from-browser` stops yt-dlp opening a browser's cookie
 database during the probe. The probe runs at startup, after each write
 from Preferences, and on File > Refresh config.
+
+The probe is a `QProcess`, like a download:
+
+- Its working directory is the Downloads folder, as for downloads (2.3).
+  With no `-P`, yt-dlp looks for a Home config in the working directory.
+  Known edge case, not handled: yt-dlp looks for its Home config
+  (`yt-dlp.conf`) in the home path. A download with a directory override
+  passes `-P <dir>`, so yt-dlp looks in `<dir>` instead, and could load a
+  Home config the probe never saw. This only matters if the user keeps a
+  `yt-dlp.conf` inside their download directories.
+- Stdin is closed at start, so a config containing `--config-locations -`
+  can't hang it.
+- It is killed after 20 s. That leaves room for the 6.5 s macOS
+  single-file build and catches a quarantined copy that hangs (6.6).
+- Download is disabled while it runs. Until it reports, Yoink can't tell
+  whether an empty directory field means no `-P` or the Downloads folder.
+- A run that is killed, times out, or reports any error other than the
+  missing URL (a bad config, a missing include) may have listed only some
+  files. Yoink then treats the config as unknown, even after a failed
+  Refresh: **Config default** with no value, no indicator, and the
+  Downloads folder as `-P`.
+- Every probe also prints yt-dlp's warning "Long argument string
+  detected. Use -- to separate parameters and URLs, like this: …", with a
+  suggested command line containing `--no-update`. It is harmless, and the
+  parser ignores it.
+
+Status bar text:
+
+| State | Text |
+|-------|------|
+| No yt-dlp on PATH | "yt-dlp not found on PATH", and Download stays disabled |
+| Probe running | "Checking yt-dlp…" |
+| Probe succeeded | "yt-dlp 2026.10.21 (pip)", or "yt-dlp unknown version" if the debug header can't be parsed |
+| Probe failed | "yt-dlp 2026.10.21 (pip), config: unknown", or "yt-dlp config: unknown" with no version |
 
 Yoink never decides which file wins. When a setting shown on the main
 window appears in more than one loaded file, the status bar shows a warning
@@ -496,11 +537,12 @@ binary path):
     first bundled library (`_internal/.../_struct.cpython-314-darwin.so`)
     was refused ("library load disallowed by system policy" in the
     kernel log), with a dialog each time. The process then hung until
-    Yoink's 15 s `--version` timeout killed it.
+    Phase 0's 15 s `--version` timeout killed it.
 
   So a yt-dlp that times out with no output, from a folder that carries
   the quarantine flag, should be treated as blocked, the same as a
-  SIGKILL. Every probe and download needs a timeout for this reason.
+  SIGKILL. Every probe and download needs a timeout for this reason. The
+  probe has had one since Phase 1 (20 s, 3.4); downloads don't yet.
 
   In `QProcess` terms, the first should show up as `CrashExit` with no
   output, and the second as a timeout with no output. Either one, together
@@ -661,16 +703,17 @@ Config probe (3.4), which also provides the yt-dlp version shown in the
 status bar (6.3) instead of the blocking `--version` call. Cookies combo
 and directory field as override controls, a Reset button, and restoring overrides on the next launch. Honour `-P` from
 the config (2.3). Overrides indicator and dialog. No config writes. Scope:
-[PHASE1.md](PHASE1.md).
+[PHASE1.md](PHASE1.md). Done; the status and deviations are at the top of
+PHASE1.md.
 
 **Phase 2: Preferences dialog.**
 Yoink tab: binary path, with every candidate found by 6.2 listed along
 with its version and install method, and update policy. yt-dlp tab with
 the structured view, "Other options" list, and raw text tab. This is the
 first config write: the line model, round-trip writer, and consistency
-check (3.2, 3.4). Status bar shows the yt-dlp version and install method
-(6.3), yt-dlp's staleness warning, and the slow-start warning for the
-macOS single-file build. Update button per 6.4.
+check (3.2, 3.4). The status bar, which shows the version since Phase 1,
+gains the install method (6.3), yt-dlp's staleness warning, and the
+slow-start warning for the macOS single-file build. Update button per 6.4.
 
 **Phase 3: Per-domain overrides.**
 `overrides.py`, Domains tab, URL-driven directory prefill, pin button,
