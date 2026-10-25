@@ -1,27 +1,31 @@
-# Phase 1 scope: cookies toggle
+# Phase 1 scope: main-window overrides and cookies
 
-Source: [DESIGN.md](DESIGN.md) section 8, Phase 1, plus sections 3 and 4.
+Source: [DESIGN.md](DESIGN.md) section 8, Phase 1, plus sections 2.3, 3.4,
+and 4.
 
-> Checkbox and browser combo on the main window; read-only parse of the
-> yt-dlp config to find an existing `--cookies-from-browser` line and prefill
-> the combo; write that one line back on change. This is the first use of
-> `ytdlp_config.py` and proves the round-trip model on a single option.
+Deliverable: pick a browser in the cookies combo and download a
+cookie-gated URL. The row shows which browser yt-dlp took cookies from.
+With both controls left on **Config default**, a download behaves exactly
+like `yt-dlp <url>`. **Reset** clears all main-window overrides.
 
-Deliverable: tick **Use browser cookies**, pick a browser, download a
-cookie-gated URL. Each row then shows which browser yt-dlp actually took
-cookies from and how many it found.
+## 1. Model
 
-## 1. Approach: yt-dlp is the authority
-
-Yoink edits one config file and does not reproduce yt-dlp's config search
-or its precedence rules. It asks yt-dlp what it loaded and displays what
-yt-dlp reports. If an option Yoink manages is also set in another file
-yt-dlp loads, Yoink shows a warning and leaves the outcome to yt-dlp.
+- **The yt-dlp config holds the defaults.** Phase 1 never writes to it.
+  Editing it is the job of the Preferences dialog in Phase 2.
+- **The main window holds local overrides.** Each control either follows
+  the config (it shows the config's value and passes nothing) or overrides
+  it (it passes a flag on the command line). The command line beats every
+  config file, so an override always applies to Yoink's downloads and never
+  affects plain `yt-dlp` runs.
+- **yt-dlp is the authority.** Yoink does not search for config files and
+  does not decide which file wins. It asks yt-dlp what it loaded (1.1),
+  shows a warning when a setting appears in more than one file (1.3), and
+  each row reports what yt-dlp actually did (1.4).
 
 ### 1.1 Config probe
 
 `yt-dlp -v --no-update --no-cookies-from-browser`, run with no URL, prints
-every config file yt-dlp loaded, using yt-dlp's own tokenization, and then
+every config file it loaded, using yt-dlp's own tokenization, and then
 exits on "You must provide at least one URL". Tested against 2026.03.17:
 
 ```
@@ -34,231 +38,197 @@ exits on "You must provide at least one URL". Tested against 2026.03.17:
   cookie database at startup. On macOS, Chrome would then show a Keychain
   prompt.
 - Yoink parses each `[debug] <Label> config "<path>": [...]` line with
-  `ast.literal_eval` and gets a list of `(label, path, tokens)`.
-- The probe runs once at startup and again after every config write, as a
-  `QProcess`, so the UI never blocks.
-- If the probe fails or its output can't be parsed, Yoink reports the
-  config state as unknown in the UI. Editing still works.
+  `ast.literal_eval` and gets a list of `LoadedConfig(label, path, tokens)`.
+  The `Command-line` entry is ignored.
+- The probe runs at startup through `QProcess`, so the UI never blocks.
+  **Refresh config** in the File menu runs it again. Phase 2 also reruns it
+  after every write.
+- If the probe fails or its output can't be parsed, the combo reads
+  **Config default** with no value shown, the status bar says the config
+  state is unknown, and downloads still work.
 
-### 1.2 Which file Yoink edits
+### 1.2 Managed settings
 
-- If the probe reports a `User config`, Yoink edits that file. This is
-  whichever of `yt-dlp.conf`, `yt-dlp/config`, `config.txt`, and so on
-  yt-dlp actually picked, and Yoink learns it without searching for it
-  itself.
-- Otherwise Yoink edits the DESIGN.md 3.1 path and creates it on the first
-  write.
-- Portable, Home, System, and `--config-locations` files are never edited.
+A managed setting is a group of options that Yoink shows on the main window.
+Phase 1 manages two:
 
-### 1.3 Override warnings
+| Setting   | Options in config                                   | Value shown                    |
+|-----------|-----------------------------------------------------|--------------------------------|
+| cookies   | `--cookies-from-browser X`, `--no-cookies-from-browser` | `X`, or `none`             |
+| directory | `-P` / `--paths`, home path only                    | the path                       |
 
-An override happens when an option Yoink manages appears in a loaded
-config other than the one Yoink edits. In Phase 1 that means
-`--cookies-from-browser` or `--no-cookies-from-browser`.
+`--paths` takes `[TYPES:]PATH`. A value sets the home directory only when
+it has no type prefix, or when `home` is one of its types. `-P temp:/tmp`
+does not count: with only that in the config, yt-dlp would download into
+Yoink's working directory. The allowed types come from yt-dlp's
+`options.py` (`home`, `temp`, and the `OUTTMPL_TYPES` keys). A Windows
+drive letter such as `C:` is not a type.
 
-When there is at least one override, the status bar shows a yellow warning
-icon (`QStyle.StandardPixmap.SP_MessageBoxWarning`, 16 px) next to
-link-styled text reading **Some configuration values overridden**. Both
-are hidden when there are no overrides. Clicking the text opens a small
-dialog that lists:
+Both the `--opt value` and `--opt=value` token forms are accepted.
 
-- the file Yoink edits, and its label from the probe
-- a table with one row for each place a managed option appears: the
-  option, its value, the file, and that file's label (User, Portable,
-  Home, System, or Custom)
-- a note that yt-dlp decides which value applies, that downloads started
-  from Yoink always use the main-window setting, and that only plain
-  `yt-dlp` runs are affected
+`config_values(loaded, setting) -> list[Occurrence]` returns every
+occurrence across all loaded configs, as
+`Occurrence(setting, value, path, label)`, in probe order. It does not
+rank them.
 
-Yoink does not compute the winner. The indicator and the dialog are
-generic over "managed options", so Phase 2 can add options to that list
-without any new UI.
+### 1.3 Override indicator
 
-This only affects plain CLI use. Yoink always passes either
-`--cookies-from-browser <spec>` or `--no-cookies-from-browser` on the
-command line, and the command line beats every config file, so for
-downloads started from Yoink the GUI setting always applies.
+The indicator appears when a managed setting occurs in more than one
+loaded config file. The status bar then shows a yellow warning icon
+(`QStyle.StandardPixmap.SP_MessageBoxWarning`, 16 px) next to link-styled
+text reading **Some configuration values overridden**. Both are hidden
+otherwise.
+
+Clicking the text opens `ConfigNoticeDialog`, which lists:
+
+- every loaded config file with its label (User, Portable, Home, System,
+  or Custom)
+- a table with one row per occurrence: setting, value, file, and label
+- a note that yt-dlp decides which value applies, and that main-window
+  overrides apply to Yoink downloads whatever the config says
+
+Repeating an option inside a single file does not trigger the indicator.
 
 ### 1.4 Ground truth in the downloads table
 
 When it opens a browser's cookie store, yt-dlp prints
 `Extracting cookies from <browser>` and then
-`Extracted <n> cookies from <browser>`, or an `ERROR:` line. `DownloadJob`
-recognises those lines, emits a `cookies` signal, and the row shows
-something like "firefox, 446 cookies" (or the error) in a tooltip or
-status cell.
+`Extracted <n> cookies from <browser>`, or an `ERROR:` line. A pure
+function `parse_cookie_line(line)` in `job.py` recognises those lines, and
+`DownloadJob` emits `cookies = Signal(str, object)` carrying the browser and
+either a count or an error. The row shows something like "firefox, 446
+cookies" as a tooltip on the Status cell. If no cookies were loaded, there
+is no tooltip.
 
-**These lines are hidden by `--quiet`.** Phase 0 passes `--quiet` in
-`argv.py`, and Phase 1 removes it. The `--progress-template` and `--print`
-output still has to be checked against the binary once `--quiet` is gone.
-If the user's own config has `--quiet`, the lines never appear and the row
-shows the cookie state as unknown. That is supported, in the same way
+The Filename column already shows the real path from the `FILE` and `DONE`
+lines. That is how a user following the config can see where a file
+actually went.
+
+**These lines are hidden by `--quiet`.** Phase 0 passes `--quiet`, and
+Phase 1 removes it. With `--quiet` gone, the `--progress-template` and
+`--print` output must be checked again against the real binary. If the
+user's own config has `--quiet`, the cookie lines never appear. The row
+then shows nothing for cookies, which is supported in the same way
 DESIGN.md 2.4 treats `--no-progress`.
 
-### 1.5 Consistency check
+## 2. Main window
 
-Yoink's line-level parser splits one line at a time. yt-dlp tokenizes the
-whole file in one call (`shlex.split(contents, comments=True)`), so an
-unquoted `#` starts a comment even inside a word, and a quoted string can
-span lines. Yoink does not try to imitate those rules. It compares its own
-tokens to the list the probe reported for the same file. If they differ,
-the file is read-only in Yoink, the combo is disabled, and a tooltip
-explains why.
+### 2.1 Cookies combo
 
-## 2. Work items
+The old checkbox-and-combo pair becomes a single combo, because there are
+three states and a checkbox can only express two:
 
-### 2.1 `yoink/ytdlp_config.py` (new, ~150 lines)
+| Item                          | Passes                               |
+|-------------------------------|--------------------------------------|
+| Config default (`<value>`)    | nothing                              |
+| No cookies                    | `--no-cookies-from-browser`          |
+| brave, chrome, … whale        | `--cookies-from-browser <browser>`   |
 
-- `probe(binary) -> list[LoadedConfig]`: the synchronous parser for the
-  probe output. `MainWindow` runs the process through `QProcess` and passes
-  the output in. `LoadedConfig(label, path, tokens)`.
-- `default_user_config() -> Path`: the DESIGN.md 3.1 path.
-- `MANAGED = ["--cookies-from-browser", "--no-cookies-from-browser"]`, which
-  Phase 2 extends.
-- `find_overrides(loaded, own_path) -> list[Override]`: every occurrence
-  of a `MANAGED` option in a loaded config other than `own_path`.
-  `Override(option, value, path, label)`. It is pure and does not rank the
-  results.
-- Line model from DESIGN.md 3.2: `Blank`, `Comment`, `Option(name, value,
-  raw)`, `Opaque(raw)`. An `Option` is a line holding one long option with
-  at most one value, written as either `--opt value` or `--opt=value`.
-- **A trailing comment is part of the line.** `Option` stores whatever
-  follows the value, such as `  # work laptop`, and writes it back
-  unchanged when the value changes.
-- `ConfigFile.load(path)`: reads the file and keeps its encoding, BOM, and
-  line endings.
-- `ConfigFile.matches(tokens) -> bool`: the consistency check from 1.5.
-- `get(name) -> str | None`: the value from the last matching `Option`
-  inside this file only. Repeated options in one file are within the
-  file's own scope, and the last one wins, as in yt-dlp.
-- `set(name, value)`: rewrites the last matching `Option` line in place,
-  or appends a new line if there is none. Raises if the only match is
-  inside an `Opaque` line.
-- `save()`: writes atomically (temp file in the same directory, then
-  `os.replace`) and creates parent directories when needed.
-- **Read-modify-write.** Yoink reloads from disk before each `set` and
-  `save`, so edits made outside Yoink are not lost.
-
-### 2.2 Cookie spec helpers
-
-- `BROWSERS = ["brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale"]`
-- `parse_spec` / `format_spec` for
-  `BROWSER[+KEYRING][:PROFILE][::CONTAINER]`. Choosing a different browser
-  drops the profile, keyring, and container. Choosing the same browser
-  keeps them.
-
-### 2.3 `yoink/argv.py`
-
-- `build_argv(url, directory, cookies_spec: str | None)`. If `cookies_spec`
-  is `None`, append `--no-cookies-from-browser`. Otherwise append
-  `--cookies-from-browser <spec>`. Both go right after `-P`, following
-  DESIGN.md 2.2.
-- Drop `--quiet` (see 1.4).
-
-### 2.4 `yoink/job.py`
-
-- Recognise the cookie lines from 1.4 and add a
-  `cookies = Signal(str, object)` signal carrying the browser and either a
-  count or an error.
-
-### 2.5 `yoink/app.py`
-
-- `KEY_USE_COOKIES = "main/use_cookies"`, default `False`, following
-  DESIGN.md 9.
-
-### 2.6 `yoink/ui/main_window.py` (~70 lines)
-
-- A row with a **Use browser cookies** checkbox and a browser combo.
-- The override indicator from 1.3 in the status bar, left of the yt-dlp
-  version.
-- On startup and after each write: run the probe, choose the file per 1.2,
-  load it, run the 1.5 check, prefill the combo, and set the tooltip to the
-  full spec and the file path.
-- Changing the combo calls `set` and then `save`, and runs the probe again.
-- The checkbox state is saved to QSettings when the window closes.
-- At download start, pass `spec if checkbox else None`.
-- The row's cookie cell is filled from the job's `cookies` signal.
-- Pitfall text in the combo tooltip, refreshed when the selection changes:
+- The first item shows the value in parentheses when every occurrence of
+  the cookies setting has the same value: "Config default (firefox)", or
+  "Config default (none)". If there is no occurrence, it reads
+  "Config default (none)". If the values disagree, it reads
+  "Config default", and the indicator from 1.3 explains.
+- Choosing a browser passes only the browser name. A config spec with a
+  profile or keyring (`chrome:Profile 2`) is used only through
+  **Config default**. Editing the spec is part of the Phase 2 Preferences.
+- The tooltip carries the pitfall text and is refreshed when the
+  selection changes:
   - Firefox must be closed.
   - Chrome on Windows 127+ needs a current yt-dlp.
   - Safari on macOS needs Full Disk Access.
+- Browser list: brave, chrome, chromium, edge, firefox, opera, safari,
+  vivaldi, whale.
 
-### 2.7 `yoink/ui/config_notice.py` (new, ~50 lines)
+### 2.2 Directory field
 
-- `ConfigNoticeDialog(own_path, own_label, overrides)`: the dialog from
-  1.3, a `QDialog` holding a header label, a read-only `QTableWidget`, the
-  note, and a Close button.
-- The status-bar indicator is an icon `QLabel` plus a text `QLabel` with
-  `linkActivated` connected to open the dialog. It lives in
-  `main_window.py`.
+- An empty field follows the config. If any loaded config sets a home
+  path, Yoink passes no `-P`. The placeholder shows the path when every
+  occurrence agrees, or "Set by yt-dlp config" when they disagree. If no
+  config sets a home path, Yoink passes the OS Downloads folder as `-P`,
+  and the placeholder shows that path (principle 5's one exception).
+- A typed or browsed value is an override and is passed as `-P`.
+- `setClearButtonEnabled(True)`, so one click returns to following the
+  config.
+- **Browse…** opens at the field's value, then the placeholder path, then
+  the Downloads folder, whichever is first available.
+- With no `-P` passed, `QProcess` sets the working directory to the
+  Downloads folder anyway. A config that sets only `-P temp:` cannot then
+  leave files in an unpredictable place.
 
-### 2.8 Tests (new)
+### 2.3 Reset button
 
-Add pytest as a uv dev dependency and `tests/test_ytdlp_config.py`:
+- A **Reset** button on the directory and cookies row clears the
+  directory field and sets the combo to **Config default**.
+- It is enabled only while at least one override is active.
+- Its tooltip reads "Clear main-window overrides and use the yt-dlp
+  config".
+- Each control's tooltip says whether it is following the config or
+  overriding it.
+- From Phase 3 on, Reset also clears a destination prefilled by a domain
+  rule. The rule applies again the next time a URL is entered.
 
-- round-trip: load then save with no edits reproduces the file byte for
-  byte, for each fixture: comments, blanks, CRLF, BOM, Opaque lines, and
-  trailing comments
-- `set` on the space form, the `=` form, a duplicated option, and an
-  absent option
-- `find_overrides`: none; the same option in a Portable or System config;
-  `own_path` excluded; both the `--opt value` and `--opt=value` token forms
-- probe-output parsing: the captured sample above, a path with spaces, a
-  non-ASCII path, and garbage input
-- `matches` against tokens produced by `shlex.split(..., comments=True)`,
-  including `#` inside a word and a quoted value that spans lines
-- `parse_spec` / `format_spec`, and where `build_argv` places the cookies
-  flags
-- the job's recognition of the cookie lines
+### 2.4 Persistence
 
-## 3. Proposed addition: honour `-P` from the config
+Overrides are restored on the next launch. Both controls are always
+visible, so an active override is never hidden, and Reset or
+**Config default** undoes it in one click.
 
-Phase 0 always passes `-P` (the OS Downloads folder when the field is
-empty), so a `-P` in any config is overridden. That breaks principle 4.
+| Key               | Values                                             |
+|-------------------|----------------------------------------------------|
+| `main/dir`        | override path, or empty to follow the config      |
+| `main/cookies`    | empty (config default), `none`, or a browser name |
 
-With the probe in place the fix is small, and Yoink does not have to decide
-which config wins. If any loaded config contains `-P` or `--paths`, and the
-directory field is empty, Yoink passes no `-P`. yt-dlp then resolves the
-directory itself, and the row's Filename column already shows the real
-path from the `FILE` and `DONE` lines. The directory field's placeholder
-says "set by yt-dlp config" rather than guessing a path.
+`main/dir` replaces Phase 0's `main/last_dir`, which has the same meaning.
+The old value is migrated once.
 
-Recommendation: include it.
+## 3. Work items
 
-## 4. Open question
+| File | Change | Lines (approx.) |
+|------|--------|-----------------|
+| `yoink/ytdlp_config.py` (new) | probe output parser, `LoadedConfig`, managed settings, `--paths` type handling, `config_values` | 80 |
+| `yoink/argv.py` | `build_argv(url, directory: str \| None, cookies: str \| None)`. `None` means pass nothing, `"none"` passes `--no-cookies-from-browser`, any other value passes `--cookies-from-browser <value>`. Drop `--quiet`. | 15 |
+| `yoink/job.py` | `parse_cookie_line`, `cookies` signal, working directory | 25 |
+| `yoink/app.py` | `KEY_DIR`, `KEY_COOKIES`, `main/last_dir` migration | 10 |
+| `yoink/ui/config_notice.py` (new) | `ConfigNoticeDialog` | 50 |
+| `yoink/ui/main_window.py` | cookies combo, directory field changes, Reset, status-bar indicator, Refresh config, probe `QProcess`, row cookie tooltip | 90 |
 
-**Saving the browser writes it to the config, so CLI yt-dlp starts using
-browser cookies.** Changing the combo writes a live `--cookies-from-browser`
-line, and from then on plain `yt-dlp` runs from a terminal load cookies,
-even while the GUI checkbox is off. The options:
+Total: about 270 lines, bringing the app to about 850 of its 1500-line
+budget.
 
-- **(a) Accept it, as designed.** The combo tooltip says it writes to the
-  yt-dlp config.
-- **(b) Write only when cookies are used.** Yoink keeps an unsaved choice in
-  QSettings until the checkbox is on.
+### Tests (new)
 
-Recommendation: (a).
+Add pytest as a uv dev dependency (`[dependency-groups] dev = ["pytest"]`).
+All of the following are pure functions, so no Qt event loop is needed.
 
-## 5. Out of scope for Phase 1
+- `tests/test_ytdlp_config.py`
+  - probe parsing: the captured sample, a path with spaces, a non-ASCII
+    path, no user config, and garbage input
+  - `config_values`:
+    - the `--opt value` and `--opt=value` forms
+    - `--no-cookies-from-browser`
+    - `-P home:/x` and bare `-P /x` count; `-P temp:/x` and
+      `-P thumbnail:/x` do not; `-P C:\x` counts
+    - several files that agree, and several that disagree
+- `tests/test_argv.py`: the cookies and `-P` flags are placed correctly or
+  left out for each state, and `--quiet` is absent
+- `tests/test_job.py`: `parse_cookie_line` on an extraction line, a count
+  line, an error line, and an unrelated line
 
-- Editing keyring, profile, or container in the UI (Phase 2).
-- Other options, the Preferences dialog, and the raw text tab.
-- Searching for config files, or working out precedence between them. Both
-  are left to yt-dlp (section 1).
-- Per-domain cookie overrides (Phase 3).
+## 4. Out of scope
 
-## 6. Estimate
+- Any write to the yt-dlp config, the line-level parser, and the
+  round-trip writer. All move to Phase 2.
+- Cookie profile, keyring, and container in the UI (Phase 2).
+- Searching for config files, or working out precedence between them.
+  Both are left to yt-dlp.
+- Domain rules (Phase 3).
 
-About 340 lines of application code and 190 of tests. That brings the app
-to about 920 of its 1500-line budget.
+## 5. Suggested commits
 
-Suggested commits:
-
-1. `ytdlp_config.py` (probe parser, line model, writer) and its tests
-2. argv cookies flags, dropping `--quiet`, and job cookie-line parsing,
-   checked against the real binary
-3. main-window checkbox, combo, override indicator and dialog, and row
-   cookie display
-4. `-P` handling (if accepted)
-5. DESIGN.md: section 3.1 becomes "the user config yt-dlp reports, else
-   this path"; add the probe and the ground-truth rule
+1. `ytdlp_config.py` and its tests
+2. argv and job changes (cookie flags, dropping `--quiet`, cookie-line
+   parsing), checked against the real binary
+3. main window: cookies combo, directory field, Reset, persistence
+4. probe, override indicator, and `ConfigNoticeDialog`
+5. README status line
