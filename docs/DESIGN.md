@@ -74,7 +74,7 @@ yt-dlp
   [domain override extra args]          # section 5
   [-P <dir>]                            # see 2.3
   [--cookies-from-browser <browser> | --no-cookies-from-browser]  # section 4
-  --no-simulate --no-quiet --progress --newline
+  --no-simulate --progress --newline
   --progress-template "download:<YOINK-TSV>"
   --progress-template "postprocess:<YOINK-PP-TSV>"
   --print "before_dl:YOINK\tFILE\t%(filename)s"
@@ -120,16 +120,9 @@ else to an in-memory log. States: `queued`, `starting`, `downloading`,
 no `DONE` line means `failed`; the last stderr lines become the row's error
 text.
 
-It also recognises yt-dlp's `Extracted <n> cookies from <browser>` line
-(and the errors from extraction) and emits `cookies`, so each row shows
-which browser yt-dlp actually used.
-
-`--print` turns quiet mode on by itself, which would hide the cookie line,
-so Yoink passes `--no-quiet` explicitly. Together with `--progress`, that
-also overrides `--quiet` or `--no-progress` in a user config. If progress
-lines still don't arrive, the job stays in `starting` with an
-indeterminate bar until `DONE` or exit. This is treated as supported, not
-an error.
+If a user config contains `--quiet` or `--no-progress`, no progress lines
+arrive. The job then stays in `starting` with an indeterminate bar until
+`DONE` or exit. This is treated as supported, not an error.
 
 Playlists: each entry produces its own `FILE`/`DL`/`DONE` sequence. Phase 0
 shows them in one row with the current filename; splitting into child rows
@@ -202,8 +195,8 @@ from Preferences, and on File > Refresh config.
 Yoink never decides which file wins. When a setting shown on the main
 window appears in more than one loaded file, the status bar shows a warning
 icon and "Some configuration values overridden". Clicking it opens a
-dialog listing each occurrence with its file. Rows in the downloads table
-report what yt-dlp actually did (section 2.4).
+dialog listing each occurrence with its file. The Filename column shows
+the path yt-dlp actually wrote to.
 
 Before saving, Phase 2's editor compares its line-level parse with the
 probe's tokens for the same file. If they differ (for example a quoted
@@ -309,8 +302,7 @@ URL, watch it download, cancel it.
 **Phase 1: Main-window overrides and cookies.**
 Config probe (3.4). Cookies combo and directory field as override controls,
 a Reset button, and restoring overrides on the next launch. Honour `-P` from
-the config (2.3). Overrides indicator and dialog. Each row shows the
-browser yt-dlp actually used for cookies. No config writes. Scope:
+the config (2.3). Overrides indicator and dialog. No config writes. Scope:
 [PHASE1.md](PHASE1.md).
 
 **Phase 2: Preferences dialog.**

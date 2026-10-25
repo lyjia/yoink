@@ -4,8 +4,7 @@ Source: [DESIGN.md](DESIGN.md) section 8, Phase 1, plus sections 2.3, 3.4,
 and 4.
 
 Deliverable: pick a browser in the cookies combo and download a
-cookie-gated URL. The row shows which browser yt-dlp took cookies from.
-With both controls left on **Config default**, a download behaves exactly
+cookie-gated URL. With both controls left on **Config default**, a download behaves exactly
 like `yt-dlp <url>`. **Reset** clears all main-window overrides.
 
 ## 1. Model
@@ -19,8 +18,8 @@ like `yt-dlp <url>`. **Reset** clears all main-window overrides.
   affects plain `yt-dlp` runs.
 - **yt-dlp is the authority.** Yoink does not search for config files and
   does not decide which file wins. It asks yt-dlp what it loaded (1.1),
-  shows a warning when a setting appears in more than one file (1.3), and
-  each row reports what yt-dlp actually did (1.4).
+  and shows a warning when a setting appears in more than one file (1.3).
+  The Filename column already shows the real path yt-dlp wrote to.
 
 ### 1.1 Config probe
 
@@ -95,38 +94,6 @@ Clicking the text opens `ConfigNoticeDialog`, which lists:
   overrides apply to Yoink downloads whatever the config says
 
 Repeating an option inside a single file does not trigger the indicator.
-
-### 1.4 Ground truth in the downloads table
-
-When it opens a browser's cookie store, yt-dlp prints
-`Extracting cookies from <browser>` and then
-`Extracted <n> cookies from <browser>`, or an `ERROR:` line. A pure
-function `parse_cookie_line(line)` in `job.py` recognises those lines, and
-`DownloadJob` emits `cookies = Signal(str, object)` carrying the browser and
-either a count or an error. The row shows something like "firefox, 446
-cookies" as a tooltip on the Status cell. If no cookies were loaded, there
-is no tooltip.
-
-The Filename column already shows the real path from the `FILE` and `DONE`
-lines. That is how a user following the config can see where a file
-actually went.
-
-**Phase 1 replaces `--quiet` with `--no-quiet`.** This was checked
-against 2026.03.17 with a local download. `--print` turns quiet mode on by
-itself, so just removing Phase 0's `--quiet` is not enough: the cookie
-lines stay hidden. With `--no-quiet`:
-
-- `Extracting cookies from firefox` and `Extracted 1 cookies from firefox`
-  arrive on stdout.
-- The `DL`, `FILE`, and `DONE` protocol lines are unchanged.
-- `PP` lines move from stderr to stdout. `DownloadJob` already sends both
-  streams through the same line handler, so nothing breaks, but the
-  `job.py` docstring needs updating.
-- yt-dlp's own `[generic]`, `[info]`, and `[download]` lines appear, and go
-  to the job log.
-- A `--quiet` in the user's config is overridden, because the command line
-  wins. This is the same reasoning as Phase 0's `--progress`: Yoink needs
-  the output to show the download.
 
 ## 2. Main window
 
@@ -204,13 +171,13 @@ The old value is migrated once.
 | File | Change | Lines (approx.) |
 |------|--------|-----------------|
 | `yoink/ytdlp_config.py` (new) | probe output parser, `LoadedConfig`, managed settings, `--paths` type handling, `config_values` | 80 |
-| `yoink/argv.py` | `build_argv(url, directory: str \| None, cookies: str \| None)`. `None` means pass nothing, `"none"` passes `--no-cookies-from-browser`, any other value passes `--cookies-from-browser <value>`. Replace `--quiet` with `--no-quiet`. | 15 |
-| `yoink/job.py` | `parse_cookie_line`, `cookies` signal, working directory | 25 |
+| `yoink/argv.py` | `build_argv(url, directory: str \| None, cookies: str \| None)`. `None` means pass nothing, `"none"` passes `--no-cookies-from-browser`, any other value passes `--cookies-from-browser <value>`. | 15 |
+| `yoink/job.py` | working directory set to the Downloads folder | 2 |
 | `yoink/app.py` | `KEY_DIR`, `KEY_COOKIES`, `main/last_dir` migration | 10 |
 | `yoink/ui/config_notice.py` (new) | `ConfigNoticeDialog` | 50 |
-| `yoink/ui/main_window.py` | cookies combo, directory field changes, Reset, status-bar indicator, Refresh config, probe `QProcess`, row cookie tooltip | 90 |
+| `yoink/ui/main_window.py` | cookies combo, directory field changes, Reset, status-bar indicator, Refresh config, probe `QProcess` | 85 |
 
-Total: about 270 lines, bringing the app to about 850 of its 1500-line
+Total: about 240 lines, bringing the app to about 820 of its 1500-line
 budget.
 
 ### Tests (new)
@@ -228,9 +195,9 @@ All of the following are pure functions, so no Qt event loop is needed.
       `-P thumbnail:/x` do not; `-P C:\x` counts
     - several files that agree, and several that disagree
 - `tests/test_argv.py`: the cookies and `-P` flags are placed correctly or
-  left out for each state, and `--no-quiet` is present
-- `tests/test_job.py`: `parse_cookie_line` on an extraction line, a count
-  line, an error line, and an unrelated line
+  left out for each of the three cookies states and both directory states.
+  This is the check that cookies are requested; that yt-dlp then honours
+  the flag is yt-dlp's job.
 
 ## 4. Out of scope
 
@@ -247,9 +214,12 @@ Each task is one commit and leaves the app runnable. T1 and T2 do not
 depend on each other and can be done in parallel.
 
 ```
-T0 ─┬─ T1 ──────────┬─ T4 ── T5 ── T6
-    └─ T2 ── T3 ────┘
+T0 ─┬─ T1 ─┬─ T4 ── T5 ── T6
+    └─ T2 ─┘
 ```
+
+Manual checks read the flags Yoink passed from the `Starting: ...` line
+that `DownloadJob` already logs to the console.
 
 ### T0. Test scaffolding and dev sandbox (~20 lines + script)
 
@@ -257,10 +227,9 @@ T0 ─┬─ T1 ──────────┬─ T4 ── T5 ── T6
   `uv run pytest` works.
 - Add `scripts/sandbox.sh`. It creates a temp `HOME` with
   `XDG_CONFIG_HOME` under it, an optional user config, a second config
-  pulled in with `--config-locations`, and a fake Firefox profile with one
-  cookie. It serves a 3 MB dummy `clip.mp4` over `http://127.0.0.1:8765`,
+  pulled in with `--config-locations`. It serves a 3 MB dummy `clip.mp4` over `http://127.0.0.1:8765`,
   then runs `python -m yoink` with that environment. Manual checks then
-  never touch the real yt-dlp config or real browser cookies.
+  never touch the real yt-dlp config.
 
 Done when `uv run pytest` passes with no tests collected, and the sandbox
 launches Yoink and downloads `clip.mp4` to the Downloads fallback.
@@ -280,26 +249,15 @@ launches Yoink and downloads `clip.mp4` to the Downloads fallback.
 Done when the `test_ytdlp_config.py` cases in section 3 pass, plus nested
 `| Config` lines and the `Included` label. No Qt imports.
 
-### T2. argv and job (~40 lines, tests ~40)
+### T2. argv and job (~20 lines, tests ~30)
 
-- New `build_argv` signature; `--no-quiet` replaces `--quiet`.
-- `parse_cookie_line`, the `cookies` signal, and `setWorkingDirectory` set
-  to the Downloads folder.
-- Update the `job.py` docstring: `PP` lines can arrive on either stream.
+- New `build_argv` signature.
+- `setWorkingDirectory` set to the Downloads folder.
 - `MainWindow.start_download` passes `cookies=None` for now, so behaviour
-  is unchanged apart from the extra log lines.
+  is unchanged.
 
-Done when `test_argv.py` and `test_job.py` pass, and a sandbox download
-still shows progress, filename, Finished, and a working Cancel.
-
-### T3. Row cookie display (~10 lines)
-
-- Connect `job.cookies` to a Status-cell tooltip: "firefox, 1 cookie", or
-  the error text.
-
-Done when a sandbox download with the fake Firefox profile in the
-sandbox's user config shows the tooltip. This also proves the
-**Config default** path end to end, because Yoink passed no cookie flag.
+Done when `test_argv.py` passes, and a sandbox download still shows
+progress, filename, Finished, and a working Cancel.
 
 ### T4. Main-window override controls (~60 lines)
 
@@ -315,8 +273,9 @@ sandbox's user config shows the tooltip. This also proves the
   makes it config-aware.
 
 Done when:
-- Choosing chrome makes the row tooltip report chrome. Choosing
-  **No cookies** makes it report nothing.
+- The logged command line has `--cookies-from-browser chrome` when chrome
+  is chosen, `--no-cookies-from-browser` for **No cookies**, and neither
+  for **Config default**.
 - Reset returns both controls to their defaults and disables itself.
 - A restart restores the overrides.
 - An existing Phase 0 `last_dir` value shows up in the field.
@@ -335,9 +294,9 @@ Done when:
 Done when these sandbox checks pass:
 - No config: "Config default (none)", the Downloads placeholder, and files
   land in the sandbox Downloads folder.
-- `-P <dir>` and `--cookies-from-browser firefox:<fake>`: the label reads
-  "Config default (firefox:<fake>)", the placeholder is `<dir>`, files land
-  in `<dir>`, and the row reports firefox.
+- `-P <dir>` and `--cookies-from-browser firefox`: the label reads
+  "Config default (firefox)", the placeholder is `<dir>`, no `-P` is
+  logged, and files land in `<dir>`.
 - Only `-P temp:<t>`: the placeholder is the Downloads folder and `-P` is
   passed.
 - Edit the config, then File > Refresh config: the labels update without
@@ -365,7 +324,8 @@ Done when:
 ### Phase 1 exit check
 
 - `uv run pytest` passes.
-- Every T3–T6 sandbox check passes in one session.
+- Every T4–T6 sandbox check passes in one session.
 - A real download from the user's normal environment, with **Config
-  default** and no yt-dlp config, behaves exactly as in Phase 0, apart from
-  the extra log lines.
+  default** and no yt-dlp config, behaves exactly as in Phase 0.
+- One real cookie-gated download by hand, with a browser chosen in the
+  combo, succeeds.
