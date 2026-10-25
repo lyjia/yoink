@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from yoink import __version__, app, argv, binary, ytdlp_config
 from yoink.job import DownloadJob, JobState, Progress
+from yoink.ui.config_notice import ConfigNoticeDialog
 
 log = logging.getLogger(__name__)
 
@@ -140,8 +142,17 @@ class MainWindow(QMainWindow):
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction("About", self._about)
 
+        # Override indicator (docs/PHASE1.md 1.3), left of the version.
+        self.notice_icon = QLabel()
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+        self.notice_icon.setPixmap(icon.pixmap(16, 16))
+        self.notice_link = QLabel('<a href="#">Some configuration values overridden</a>')
+        self.notice_link.setToolTip("Show which yt-dlp config files set the same option")
+        self.notice_link.linkActivated.connect(self.show_config_notice)
         self.status_label = QLabel()
-        self.statusBar().addPermanentWidget(self.status_label)
+        for w in (self.notice_icon, self.notice_link, self.status_label):
+            self.statusBar().addPermanentWidget(w)
+        self._set_conflicts([])
 
     def _restore_state(self) -> None:
         if geo := self.settings.value(app.KEY_GEOMETRY):
@@ -164,6 +175,10 @@ class MainWindow(QMainWindow):
             return
         self.status_label.setText("Checking yt-dlp…")
         self.status_label.setToolTip(str(self.binary_path))
+        # Until the probe says whether the config sets a home path, an empty
+        # directory field can't tell "pass no -P" from "pass Downloads".
+        self.start_btn.setEnabled(False)
+        self.start_btn.setToolTip("Waiting for yt-dlp to report its config")
         if self._probe:  # superseded; _probe_done ignores its result
             self._probe.kill()
         self._probe = proc = QProcess(self)
@@ -185,6 +200,8 @@ class MainWindow(QMainWindow):
         if proc is not self._probe:
             return
         self._probe = None
+        self.start_btn.setEnabled(True)
+        self.start_btn.setToolTip("")
         text = bytes(proc.readAll()).decode("utf-8", "replace")
         # A killed probe may have listed some config files but not all of them.
         self.loaded_configs = ytdlp_config.parse_probe(text) if exited else None
@@ -195,6 +212,7 @@ class MainWindow(QMainWindow):
         fallback = "Set by yt-dlp config" if d.sets_directory else argv.default_download_dir()
         self.dir_edit.setPlaceholderText(d.directory or fallback)
         self._overrides_changed()
+        self._set_conflicts(ytdlp_config.find_conflicts(self.loaded_configs or []))
 
         if ver := ytdlp_config.parse_version(text):
             status = f"yt-dlp {ver[0]} ({ver[1]})" if ver[1] else f"yt-dlp {ver[0]}"
@@ -203,6 +221,16 @@ class MainWindow(QMainWindow):
         if self.loaded_configs is None:
             status = f"{status}, config: unknown" if ver else "yt-dlp config: unknown"
         self.status_label.setText(status)
+
+    def _set_conflicts(self, conflicts: list[ytdlp_config.Occurrence]) -> None:
+        self.conflicts = conflicts
+        self.notice_icon.setVisible(bool(conflicts))
+        self.notice_link.setVisible(bool(conflicts))
+
+    def show_config_notice(self) -> None:
+        dialog = ConfigNoticeDialog(self.loaded_configs or [], self.conflicts, self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.open()
 
     # ---- overrides --------------------------------------------------------
 
@@ -251,7 +279,7 @@ class MainWindow(QMainWindow):
 
     def start_download(self) -> None:
         url = self.url_edit.text().strip()
-        if not url:
+        if not url or self._probe:  # Enter while probing; the button is disabled
             return
         if not self.binary_path:
             QMessageBox.warning(self, app.APP_TITLE, "yt-dlp was not found on PATH.")
