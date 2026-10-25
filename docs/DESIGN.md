@@ -74,7 +74,7 @@ yt-dlp
   [domain override extra args]          # section 5
   [-P <dir>]                            # see 2.3
   [--cookies-from-browser <browser> | --no-cookies-from-browser]  # section 4
-  --no-simulate --progress --newline
+  --no-simulate --no-quiet --progress --newline
   --progress-template "download:<YOINK-TSV>"
   --progress-template "postprocess:<YOINK-PP-TSV>"
   --print "before_dl:YOINK\tFILE\t%(filename)s"
@@ -122,12 +122,14 @@ text.
 
 It also recognises yt-dlp's `Extracted <n> cookies from <browser>` line
 (and the errors from extraction) and emits `cookies`, so each row shows
-which browser yt-dlp actually used. Yoink does not pass `--quiet`, because
-it would hide that line.
+which browser yt-dlp actually used.
 
-If a user config contains `--quiet` or `--no-progress`, no progress lines
-arrive. The job then stays in `starting` with an indeterminate bar until
-`DONE` or exit. This is treated as supported, not an error.
+`--print` turns quiet mode on by itself, which would hide the cookie line,
+so Yoink passes `--no-quiet` explicitly. Together with `--progress`, that
+also overrides `--quiet` or `--no-progress` in a user config. If progress
+lines still don't arrive, the job stays in `starting` with an
+indeterminate bar until `DONE` or exit. This is treated as supported, not
+an error.
 
 Playlists: each entry produces its own `FILE`/`DL`/`DONE` sequence. Phase 0
 shows them in one row with the current filename; splitting into child rows
