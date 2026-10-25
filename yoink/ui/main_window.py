@@ -1,14 +1,16 @@
-"""Main window: URL and directory inputs plus the downloads table."""
+"""Main window: URL input, override controls, and the downloads table."""
 
 import logging
 import os
 from pathlib import Path
 from urllib.parse import urlparse
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -31,6 +33,15 @@ log = logging.getLogger(__name__)
 COLUMNS = ["Status", "URL", "Host", "Filename", "Downloaded", "Total", "Speed", "Progress", ""]
 (C_STATUS, C_URL, C_HOST, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG, C_CANCEL) = range(len(COLUMNS))
 
+BROWSERS = ["brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale"]
+# Known cookie extraction pitfalls (docs/DESIGN.md section 4).
+PITFALLS = {
+    "firefox": "Firefox must be closed, or yt-dlp cannot read its cookies.",
+    "chrome": "Chrome on Windows 127+ needs a current yt-dlp.",
+    "safari": "Safari on macOS needs Full Disk Access.",
+}
+FOLLOWING = "Following the yt-dlp config."
+
 
 def format_bytes(n: float | None) -> str:
     if n is None:
@@ -45,7 +56,7 @@ def format_bytes(n: float | None) -> str:
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.settings = QSettings(app.ORG_NAME, app.APP_NAME)
+        self.settings = app.settings()
         self.jobs: list[DownloadJob] = []  # index == table row
         self.binary_path = binary.find_binary(self.settings.value(app.KEY_BINARY_PATH))
 
@@ -63,25 +74,43 @@ class MainWindow(QMainWindow):
 
         self.url_edit = QLineEdit(placeholderText="URL")
         self.url_edit.returnPressed.connect(self.start_download)
-        self.dir_edit = QLineEdit(placeholderText=argv.default_download_dir())
-        self.dir_edit.setToolTip("Download directory. Empty means the OS Downloads folder.")
-        browse = QPushButton("Browse…")
-        browse.clicked.connect(self._browse)
         self.start_btn = QPushButton("Download")
         self.start_btn.setDefault(True)
         self.start_btn.clicked.connect(self.start_download)
 
-        dir_row = QHBoxLayout()
-        dir_row.addWidget(QLabel("Save to:"))
-        dir_row.addWidget(self.dir_edit, 1)
-        dir_row.addWidget(browse)
+        # Override controls (docs/PHASE1.md section 2). Each one is empty or
+        # "Config default" while following the yt-dlp config.
+        self.dir_edit = QLineEdit(placeholderText=argv.default_download_dir())
+        self.dir_edit.setClearButtonEnabled(True)
+        self.dir_edit.textChanged.connect(self._overrides_changed)
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse)
+        self.cookies_combo = QComboBox()
+        self.cookies_combo.addItem("", "")  # text set by _set_config_cookies
+        self.cookies_combo.addItem("No cookies", "none")
+        for b in BROWSERS:
+            self.cookies_combo.addItem(b, b)
+        self._set_config_cookies(None)
+        self.cookies_combo.currentIndexChanged.connect(self._overrides_changed)
+        self.reset_btn = QPushButton("Reset")
+        self.reset_btn.setToolTip("Clear main-window overrides and use the yt-dlp config")
+        self.reset_btn.clicked.connect(self.reset_overrides)
 
         url_row = QHBoxLayout()
         url_row.addWidget(self.url_edit, 1)
         url_row.addWidget(self.start_btn)
 
+        grid = QGridLayout()
+        grid.addWidget(QLabel("Save to:"), 0, 0)
+        grid.addWidget(self.dir_edit, 0, 1)
+        grid.addWidget(browse, 0, 2)
+        grid.addWidget(QLabel("Cookies:"), 1, 0)
+        grid.addWidget(self.cookies_combo, 1, 1, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(self.reset_btn, 1, 2)
+
         root.addLayout(url_row)
-        root.addLayout(dir_row)
+        root.addLayout(grid)
+        self._overrides_changed()
 
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
@@ -111,7 +140,11 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geo)
         else:
             self.resize(1000, 560)
-        self.dir_edit.setText(self.settings.value(app.KEY_LAST_DIR, ""))
+        app.migrate_settings(self.settings)
+        self.dir_edit.setText(self.settings.value(app.KEY_DIR, ""))
+        # An unknown value (say, a browser dropped from the list) follows the config.
+        i = self.cookies_combo.findData(self.settings.value(app.KEY_COOKIES, ""))
+        self.cookies_combo.setCurrentIndex(max(i, 0))
 
     def _report_binary(self) -> None:
         if not self.binary_path:
@@ -122,10 +155,41 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"yt-dlp {ver}")
         self.status_label.setToolTip(str(self.binary_path))
 
+    # ---- overrides --------------------------------------------------------
+
+    def _set_config_cookies(self, value: str | None) -> None:
+        """Label the first combo item with the config's cookies value, if known."""
+        self.cookies_combo.setItemText(0, f"Config default ({value})" if value else "Config default")
+
+    def _overrides_changed(self) -> None:
+        directory = self.dir_edit.text().strip()
+        cookies = self.cookies_combo.currentData()
+        self.reset_btn.setEnabled(bool(directory or cookies))
+        self.dir_edit.setToolTip(
+            "Overriding the yt-dlp config. Clear the field to follow it."
+            if directory
+            else f"{FOLLOWING} Type or browse to override it."
+        )
+        if not cookies:
+            tip = FOLLOWING
+        elif cookies == "none":
+            tip = "Overriding the yt-dlp config: no browser cookies."
+        else:
+            tip = f"Overriding the yt-dlp config: cookies from {cookies}."
+            if cookies in PITFALLS:
+                tip += "\n" + PITFALLS[cookies]
+        self.cookies_combo.setToolTip(tip)
+
+    def reset_overrides(self) -> None:
+        self.dir_edit.clear()
+        self.cookies_combo.setCurrentIndex(0)
+
     # ---- actions ----------------------------------------------------------
 
     def _browse(self) -> None:
-        start = self.dir_edit.text() or argv.default_download_dir()
+        # The placeholder may be text rather than a path once the config is probed.
+        candidates = (self.dir_edit.text().strip(), self.dir_edit.placeholderText())
+        start = next((d for d in candidates if os.path.isdir(d)), argv.default_download_dir())
         chosen = QFileDialog.getExistingDirectory(self, "Download directory", start)
         if chosen:
             self.dir_edit.setText(chosen)
@@ -142,7 +206,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, app.APP_TITLE, f"Directory does not exist:\n{directory}")
             return
 
-        job = DownloadJob(self.binary_path, argv.build_argv(url, directory, cookies=None), url, parent=self)
+        cookies = self.cookies_combo.currentData() or None
+        job = DownloadJob(self.binary_path, argv.build_argv(url, directory, cookies), url, parent=self)
         self._add_row(job)
         job.state_changed.connect(lambda s, j=job: self._on_state(j, s))
         job.file_named.connect(lambda f, j=job: self._set(j, C_FILE, os.path.basename(f)))
@@ -226,7 +291,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self.settings.setValue(app.KEY_GEOMETRY, self.saveGeometry())
-        self.settings.setValue(app.KEY_LAST_DIR, self.dir_edit.text().strip())
+        self.settings.setValue(app.KEY_DIR, self.dir_edit.text().strip())
+        self.settings.setValue(app.KEY_COOKIES, self.cookies_combo.currentData())
         for job in self.jobs:
             job.cancel()
         super().closeEvent(event)
