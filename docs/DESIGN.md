@@ -298,8 +298,11 @@ The other values come from yt-dlp's `update.py`.
 Notes:
 
 - On macOS, single-file binaries and folder builds downloaded in a
-  browser are quarantined and blocked by Gatekeeper (6.6). Homebrew,
-  pip, and copies Yoink downloads itself are not.
+  browser are quarantined and blocked by Gatekeeper (6.6). The folder
+  build is effectively uninstallable this way, with one block per bundled
+  native library (102 of them). Homebrew, pip, and copies Yoink downloads
+  itself are not affected. For a manual install on a Mac, Homebrew is the
+  realistic choice.
 - The zipapp needs Python 3.10 or later on PATH. The `python3` that comes
   with Apple's Command Line Tools is 3.9.6, so on a stock Mac the zipapp
   does not run.
@@ -415,6 +418,27 @@ below were checked on 2026-10-25 against macOS 15.8.2 and yt-dlp
   current as the user's last `brew upgrade`, and `-U` does not apply to
   them.
 
+**Field report: installing the folder build by hand (2026-10-25)**
+
+Downloading `yt-dlp_macos.zip` in Firefox and unpacking it produced an
+endless run of Gatekeeper blocks. Approving the main executable is not
+enough. Every native library in the bundled Python is quarantined too, and
+each one is blocked separately when yt-dlp loads it. The zip contains 102
+of them (`.so` and `.dylib` files in `_internal/`, among them `libssl`,
+`libcrypto`, and the extension modules), so the user faces up to 102
+separate "Open Anyway" trips through System Settings. In practice the
+folder build cannot be installed through the GUI.
+
+The single-file build should need only one approval, because it unpacks
+its libraries itself, as a process that doesn't add quarantine. This has
+not been verified, and the build still costs 6.5 s on every launch.
+
+**Conclusion:** of the ways a user can install yt-dlp by hand, Homebrew is
+the only one a typical Mac user can actually get working. Release assets
+downloaded in a browser need Terminal (`xattr -dr com.apple.quarantine`),
+and pip, pipx, and uv need a newer Python than macOS ships (6.1). The
+other painless path is a copy that Yoink downloads itself (below).
+
 **What doesn't block**
 
 Files written by a program that isn't marked as quarantine-aware, such as
@@ -469,6 +493,35 @@ binary path):
   prevented by the check before it.
 
 The same applies to any binary the user chooses in Preferences (Phase 2).
+
+**Open question: a friendly setup flow**
+
+Undecided. When Yoink finds no usable yt-dlp, or finds one Gatekeeper will
+block, it probably needs a setup screen that walks the user to a working
+install instead of just reporting an error. Options under consideration,
+none chosen:
+
+- **A. Homebrew guidance.**
+  - If `brew` exists (`/opt/homebrew/bin/brew` or `/usr/local/bin/brew`),
+    show `brew install yt-dlp` with a Copy button, or open Terminal with
+    the command ready to run, then re-run discovery.
+  - If `brew` is missing, point to brew.sh. Installing Homebrew itself
+    needs an admin password and the Command Line Tools, which is a lot to
+    ask of a non-technical user.
+  - Updates later go through `brew upgrade` (6.4).
+- **B. Yoink downloads its own copy (6.5).** One button, no Gatekeeper
+  prompts (tested above), and checksum-verified. The costs: 123 MB, Yoink
+  takes on updates, and Yoink downloads and runs an unnotarized binary on
+  the user's behalf.
+- **C. Repair a blocked copy.** If the user already downloaded a release
+  asset, one confirmed "Allow this copy" (`xattr -dr com.apple.quarantine`
+  on its folder) replaces up to 102 System Settings trips.
+- **D. pip, pipx, or uv.** Not for typical users: they need Python 3.10
+  or later, and stock macOS has 3.9.6.
+
+A likely shape: offer B as the default and A as "I prefer Homebrew", and
+show C only when a quarantined copy is detected. This needs a decision
+before Phase 4, and possibly before Phase 2's binary picker.
 
 ## 7. Packaging
 
