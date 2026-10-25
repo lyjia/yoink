@@ -276,10 +276,94 @@ rules that reference other rules.
 
 Resolution order: QSettings override path, `yt-dlp` on PATH, Yoink-managed
 copy in the app-data dir. If none, offer to download the platform asset
-(`yt-dlp`, `yt-dlp.exe`, `yt-dlp_macos`) from the latest GitHub release.
-Update uses the binary's own `-U` when it is the managed copy or writable;
-otherwise the UI says to update via the package manager that installed it.
-Version string comes from `yt-dlp --version`, shown in the status bar.
+(`yt-dlp`, `yt-dlp.exe`, or `yt-dlp_macos.zip` on macOS, see 6.1) from the
+latest GitHub release, and verify it against the release's `SHA2-256SUMS`.
+Update uses the binary's own `-U` when it is the managed copy or writable,
+except on macOS (6.1); otherwise the UI says to update via the package
+manager that installed it. Version string comes from `yt-dlp --version`,
+shown in the status bar.
+
+### 6.1 macOS: Gatekeeper and quarantine
+
+Getting yt-dlp onto a Mac by hand is a real failure point for users, and
+the most likely reason a new user reports "Yoink doesn't work". The facts
+below were checked on 2026-10-25 against macOS 15.8.2 and yt-dlp
+2026.10.21.
+
+**What blocks a manual install**
+
+- Both macOS assets, `yt-dlp_macos` (single file) and `yt-dlp_macos.zip`
+  (a folder with an `_internal/` directory), are universal2 binaries with
+  an ad-hoc signature only. They have no Developer ID and are not
+  notarized, so `spctl --assess` rejects them.
+- A browser download gets the `com.apple.quarantine` attribute. Unzipping
+  passes it on to the extracted files, even when the command-line `unzip`
+  does the extraction.
+- Gatekeeper enforces its verdict only on quarantined files. When a user
+  downloads the zip in a browser and opens it in Finder, the binary is
+  blocked. Since macOS 15 the Control-click > Open bypass is gone (that is
+  Apple's documented change and was not re-tested here): the user has to
+  try to run it, then go to System Settings > Privacy & Security >
+  "Open Anyway", or run `xattr -dr com.apple.quarantine <folder>` in
+  Terminal. Neither is something most GUI users will find on their own.
+- Homebrew installs are not quarantined and just work. They are only as
+  current as the user's last `brew upgrade`, and `-U` does not apply to
+  them.
+
+**What doesn't block**
+
+Files written by a program that isn't marked as quarantine-aware, such as
+`curl` or Python's `requests`, get no quarantine attribute. Both assets,
+downloaded that way, ran with no prompt even though `spctl` still reports
+"rejected". This is why the Yoink-managed copy is the frictionless path
+on macOS.
+
+**Which asset to use**
+
+| Asset | Size | Startup | `-U` |
+|-------|------|---------|------|
+| `yt-dlp_macos` (single file) | ~35 MB | 6.5–6.8 s **on every launch** (it unpacks itself each time) | supported |
+| `yt-dlp_macos.zip` (folder) | 123 MB unpacked | 6.6 s on the first launch, then 0.18–0.19 s; the probe takes 0.33 s | not supported: "Re-download the latest release" |
+
+Yoink starts yt-dlp for the probe and for every download, so a 6.5 s
+startup is unacceptable. **Yoink manages the folder build.**
+
+**Plan for the managed copy (Phase 4)**
+
+1. Download `yt-dlp_macos.zip` and `SHA2-256SUMS` from the release with
+   `requests`, and check the SHA-256 before extracting anything.
+2. Extract into a new versioned directory under app data, such as
+   `<appdata>/yt-dlp/2026.10.21/`. Python's `zipfile` drops permission
+   bits, so restore the executable bits from each entry's `external_attr`,
+   or extract with `ditto -x -k`.
+3. Run `--version` once as a warm-up while showing "Preparing yt-dlp…", so
+   the slow first launch never happens during a download.
+4. Switch over atomically by recording the new path in QSettings, then
+   delete the old version. If any step fails, the previous version stays
+   in use.
+5. Updating means repeating steps 1–4 with the latest release. The folder
+   build cannot update itself with `-U`.
+
+**A user-supplied binary that is quarantined** (on PATH or set as the
+binary path):
+
+- Before launching it, check the binary and its `_internal/` folder for
+  `com.apple.quarantine`. Python's `os.getxattr` doesn't exist on macOS,
+  so use `xattr -p`, or `getxattr` through `ctypes`.
+- If it is quarantined, don't launch it. Show a dialog that explains why
+  macOS blocks it and offers:
+  1. **Use Yoink's own copy** (recommended): starts the managed download
+     above.
+  2. **Allow this copy**: after an explicit confirmation naming the path,
+     run `xattr -dr com.apple.quarantine` on the binary's folder. Offer
+     this only if the user owns the files. Never do it silently.
+  3. A short guide to Privacy & Security > Open Anyway.
+- Still to verify in Phase 4: what `QProcess` reports when it does launch
+  a quarantined binary (a crash, an error, or a system dialog). That
+  decides whether a failure can be detected after launch as well as
+  prevented by the check before it.
+
+The same applies to any binary the user chooses in Preferences (Phase 2).
 
 ## 7. Packaging
 
@@ -287,6 +371,16 @@ Nuitka, `--standalone --enable-plugin=pyside6`, optional `--onefile`. The
 yt-dlp binary is not bundled; it is fetched on first run or found on PATH.
 Build scripts for Linux and Windows live under `build/`. CI builds are
 backlog.
+
+macOS: Yoink.app runs into the same Gatekeeper problem as yt-dlp (6.1). An
+unsigned app downloaded in a browser is blocked until the user clicks
+"Open Anyway" in Privacy & Security. Removing that friction takes a
+Developer ID certificate (Apple Developer Program) plus notarization in the
+release build. Until then, the release notes must spell out the "Open
+Anyway" steps. Prefer the standalone `.app` over `--onefile` on macOS,
+because the onefile startup penalty measured for yt-dlp (6.1) applies here
+too. A notarized Yoink must not set `LSFileQuarantineEnabled`, or the
+yt-dlp it downloads would be quarantined (6.1).
 
 ## 8. Phases
 
@@ -316,8 +410,10 @@ write: the line model, round-trip writer, and consistency check (3.2,
 cookies override. `argv.py` grows the resolution order from section 5.
 
 **Phase 4: Distribution.**
-Managed binary download and update, Nuitka build scripts, a log viewer on
-row double-click, first tagged release.
+Managed binary download and update (on macOS, the folder build with
+checksum verification and a quarantine check, section 6.1), Nuitka build
+scripts, macOS signing and notarization or documented "Open Anyway" steps
+(section 7), a log viewer on row double-click, first tagged release.
 
 **Backlog, unscheduled.**
 Concurrency limit and queue, playlist entries as child rows, clipboard watch,
