@@ -487,10 +487,13 @@ binary path):
      run `xattr -dr com.apple.quarantine` on the binary's folder. Offer
      this only if the user owns the files. Never do it silently.
   3. A short guide to Privacy & Security > Open Anyway.
-- Still to verify in Phase 4: what `QProcess` reports when it does launch
-  a quarantined binary (a crash, an error, or a system dialog). That
-  decides whether a failure can be detected after launch as well as
-  prevented by the check before it.
+- **What happens if Yoink launches a quarantined binary anyway** (checked
+  on 2026-10-25): the process is killed with SIGKILL at launch, before it
+  writes any output, and macOS may show its blocked-app dialog. In
+  `QProcess` terms that should be `CrashExit` with no output at all. That
+  pattern, together with a quarantine flag on the binary, lets Yoink
+  explain the failure after the fact as well as preventing it with the
+  check before launch. Confirm the exact `QProcess` signals in Phase 4.
 
 The same applies to any binary the user chooses in Preferences (Phase 2).
 
@@ -522,6 +525,14 @@ none chosen:
     downloaded.
   - yt-dlp then ran with no prompts at all: 6.35 s on the first launch
     (macOS scanning the bundle), then 0.19 s.
+  - Control: a copy that still had the flag, launched the same way, was
+    killed at launch (SIGKILL, before printing anything). So Gatekeeper was
+    enforcing in the test environment, and the clean run is not explained
+    by a "Developer Tools" exemption for the launching app. With no
+    quarantine attribute, Gatekeeper doesn't assess the file at all, so
+    there is no "Open Anyway" or "downloaded from the internet" prompt on
+    first run. The 6 s first launch is the background malware scan, and it
+    shows no dialog.
 
   Details:
   - **Admin rights only when needed.** They are required only if the files
