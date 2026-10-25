@@ -487,12 +487,26 @@ binary path):
      this only if the user owns the files. Never do it silently.
   3. A short guide to Privacy & Security > Open Anyway.
 - **What happens if Yoink launches a quarantined binary anyway** (checked
-  on 2026-10-25): the process is killed with SIGKILL at launch, before it
-  writes any output, and macOS may show its blocked-app dialog. In
-  `QProcess` terms that should be `CrashExit` with no output at all. That
-  pattern, together with a quarantine flag on the binary, lets Yoink
-  explain the failure after the fact as well as preventing it with the
-  check before launch. Confirm the exact `QProcess` signals in Phase 4.
+  on 2026-10-25). There are two patterns:
+  - **Killed at launch.** A freshly unpacked copy is killed with SIGKILL
+    before it writes any output, and macOS may show its blocked-app
+    dialog.
+  - **Hangs on a library load.** In a real install whose main executable
+    had already been allowed, the executable started, but loading the
+    first bundled library (`_internal/.../_struct.cpython-314-darwin.so`)
+    was refused ("library load disallowed by system policy" in the
+    kernel log), with a dialog each time. The process then hung until
+    Yoink's 15 s `--version` timeout killed it.
+
+  So a yt-dlp that times out with no output, from a folder that carries
+  the quarantine flag, should be treated as blocked, the same as a
+  SIGKILL. Every probe and download needs a timeout for this reason.
+
+  In `QProcess` terms, the first should show up as `CrashExit` with no
+  output, and the second as a timeout with no output. Either one, together
+  with a quarantine flag on the binary, lets Yoink explain the failure
+  after the fact as well as preventing it with the check before launch.
+  Confirm the exact `QProcess` signals in Phase 4.
 
 The same applies to any binary the user chooses in Preferences (Phase 2).
 
