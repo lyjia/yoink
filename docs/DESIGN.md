@@ -289,3 +289,7 @@ retry failed, drag-and-drop URLs, system tray, CI builds.
   convenience with a tooltip and a confirmation on overwrite.
 - With no directory from the user, a rule, or the config, Yoink falls back to
   the OS Downloads folder (section 2.3).
+
+## 10. Feature wishlist
+
+* Explorer/Finder/file manager integration - "Yoink here" right-click menu entry for directories, which opens a new Yoink instance with the destination set to the directory. If a Yoink window is already open, the destination folder is instead set to the requested directory. This may require some sort of configuration override feature, if settings (such as per-domain override) already dictate the destination
