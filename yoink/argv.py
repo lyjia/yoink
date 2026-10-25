@@ -39,16 +39,22 @@ def default_download_dir() -> str:
     return QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
 
 
-def build_argv(url: str, directory: str | None = None) -> list[str]:
+def build_argv(url: str, directory: str | None = None, cookies: str | None = None) -> list[str]:
     """Return the argument list (without the binary) for downloading `url`.
 
-    `directory` is the effective download directory already resolved by the
-    caller. Phase 0 resolution: main-window field, else OS Downloads. Reading
-    `--paths` out of the yt-dlp config comes with the config parser.
+    `None` (or an empty directory) passes nothing for that setting, so the
+    yt-dlp config decides. A directory is passed as `-P`. `cookies="none"`
+    passes `--no-cookies-from-browser`; any other value is a browser name for
+    `--cookies-from-browser`. Falling back to the Downloads folder when the
+    config sets no home path is the caller's job.
     """
     args: list[str] = []
     if directory:
         args += ["-P", directory]
+    if cookies == "none":
+        args += ["--no-cookies-from-browser"]
+    elif cookies:
+        args += ["--cookies-from-browser", cookies]
     args += [
         # --print implies --simulate; undo that.
         "--no-simulate",

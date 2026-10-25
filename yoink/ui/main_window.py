@@ -142,7 +142,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, app.APP_TITLE, f"Directory does not exist:\n{directory}")
             return
 
-        job = DownloadJob(self.binary_path, argv.build_argv(url, directory), url, parent=self)
+        job = DownloadJob(self.binary_path, argv.build_argv(url, directory, cookies=None), url, parent=self)
         self._add_row(job)
         job.state_changed.connect(lambda s, j=job: self._on_state(j, s))
         job.file_named.connect(lambda f, j=job: self._set(j, C_FILE, os.path.basename(f)))
