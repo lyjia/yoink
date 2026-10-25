@@ -514,8 +514,34 @@ none chosen:
   takes on updates, and Yoink downloads and runs an unnotarized binary on
   the user's behalf.
 - **C. Repair a blocked copy.** If the user already downloaded a release
-  asset, one confirmed "Allow this copy" (`xattr -dr com.apple.quarantine`
-  on its folder) replaces up to 102 System Settings trips.
+  asset, one confirmed "Allow this copy" replaces up to 102 System Settings
+  trips. **Verified 2026-10-25:**
+  - Unzipping the browser-downloaded zip left 163 quarantined files.
+  - `xattr -dr com.apple.quarantine <folder>` cleared all of them in under
+    10 ms, and **without sudo**, because the user owns files they
+    downloaded.
+  - yt-dlp then ran with no prompts at all: 6.35 s on the first launch
+    (macOS scanning the bundle), then 0.19 s.
+
+  Details:
+  - **Admin rights only when needed.** They are required only if the files
+    belong to another user, for example something an admin copied into
+    `/usr/local`. Ask for them only then, through the standard macOS
+    password dialog (`osascript -e 'do shell script "…" with administrator
+    privileges'`), never through a sudo prompt in a terminal.
+  - **No `spctl`.** `spctl --add` and changing Gatekeeper's global settings
+    are not needed. They require admin rights, and macOS 15 restricts them.
+  - **Integrity.** Removing quarantine skips Gatekeeper's check for that
+    code, so Yoink should confirm the files are genuine first. That is
+    only possible while the original download exists. If the zip, or the
+    single-file binary, is still there, Yoink checks its SHA-256 against
+    the release's `SHA2-256SUMS`. The published sums cover only the zip
+    and the single-file binary, so an already-unpacked folder cannot be
+    checked file by file. In that case the dialog says the copy can't be
+    verified and recommends B. The user's explicit confirmation stays
+    mandatory either way.
+  - Do the same warm-up as in the managed-copy plan, so the 6 s first
+    launch doesn't land on a download.
 - **D. pip, pipx, or uv.** Not for typical users: they need Python 3.10
   or later, and stock macOS has 3.9.6.
 
