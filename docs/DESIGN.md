@@ -21,8 +21,7 @@ process; nothing from yt-dlp is imported into the Python process.
    Downloads folder. Yoink adds nothing the user did not configure, with the
    sole exception of the download directory, because a GUI app has no
    meaningful working directory.
-5. **Keep it small.** Target under 1500 lines of application code. No plugin
-   system, no database, no async framework.
+5. **Keep it small and simple.** Target the minimum amount of application code needed to implement the design in accordance with the principles.
 
 ## 2. Architecture
 
