@@ -1,6 +1,6 @@
 [project]
 name = "yoink"
-version = "0.1.0"
+version = "0.0.1"
 description = "A small Qt front end for yt-dlp"
 requires-python = ">=3.11"
 dependencies = [
