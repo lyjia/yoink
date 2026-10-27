@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+import zlib
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -39,13 +40,15 @@ from yoink.ui.prefs_dialog import PrefsDialog, _row as side_by_side
 
 log = logging.getLogger(__name__)
 
-# Qt restores a saved header by column index: rename app.KEY_HEADER if these change.
 COLUMNS = ["", "Status", "Scheme", "Host", "Path", "Filename", "Downloaded", "Total", "Speed",
            "Progress", "Title", "Uploader", "Duration", "Resolution", "Upload date", ""]
 (C_ICON, C_STATUS, C_SCHEME, C_HOST, C_PATH, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG,
  C_TITLE, C_UPLOADER, C_DURATION, C_RES, C_DATE, C_ACTION) = range(len(COLUMNS))
 META_COLUMNS = range(C_TITLE, C_ACTION)  # in the order of the META fields
 HIDDEN = (C_SCHEME, *META_COLUMNS)  # until shown from the View menu
+# Table widths, order and hidden columns. Qt restores them by column index, so a
+# different column list gets a different key and starts from the defaults.
+HEADER_KEY = f"{app.KEY_HEADER}/{zlib.crc32('|'.join(COLUMNS).encode()):08x}"
 SP = QStyle.StandardPixmap
 STATE_ICONS = {
     JobState.QUEUED: SP.SP_BrowserReload,
@@ -211,13 +214,12 @@ class MainWindow(QMainWindow):
         # An unknown value (say, a browser dropped from the list) follows the config.
         i = self.cookies_combo.findData(self.settings.value(app.KEY_COOKIES, ""))
         self.cookies_combo.setCurrentIndex(max(i, 0))
-        self._set_header(self.settings.value(app.KEY_HEADER))
+        self._set_header(self.settings.value(HEADER_KEY))
 
     def _set_header(self, state: QByteArray | None) -> None:
-        """Restore the table columns from `state`, or the defaults if it doesn't fit."""
+        """Restore the table columns from `state`, or the defaults if there is none or Qt rejects it."""
         hdr = self.table.horizontalHeader()
-        # A state saved with other columns may restore "fine" yet keep its column count.
-        if not (state and hdr.restoreState(state) and hdr.count() == len(COLUMNS)):
+        if not (state and hdr.restoreState(state)):
             hdr.restoreState(self._default_header)
         for col, action in enumerate(self.column_actions):
             action.setChecked(not hdr.isSectionHidden(col))
@@ -482,7 +484,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue(app.KEY_GEOMETRY, self.saveGeometry())
         self.settings.setValue(app.KEY_DIR, self.dir_edit.text().strip())
         self.settings.setValue(app.KEY_COOKIES, self.cookies_combo.currentData())
-        self.settings.setValue(app.KEY_HEADER, self.table.horizontalHeader().saveState())
+        self.settings.setValue(HEADER_KEY, self.table.horizontalHeader().saveState())
         if proc := self._probe:
             self._probe = None  # so _probe_done ignores it
             proc.kill()
