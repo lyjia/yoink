@@ -22,6 +22,7 @@ esac
 # test build doesn't need it. $extra is unquoted on purpose: it may be empty.
 # shellcheck disable=SC2086
 uv run python -m nuitka --mode=app-dist --enable-plugin=pyside6 --lto=no \
+    --include-distribution-metadata=yoink \
     --output-dir=dist --assume-yes-for-downloads $extra "$@" yoink
 
 echo "Built: $PWD/$out"
