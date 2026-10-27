@@ -38,11 +38,12 @@ _PRINT_META = "\t".join(
     [
         f"before_dl:{TOKEN}",
         "META",
-        "%(title)s",
-        "%(uploader)s",
-        "%(duration_string)s",
-        "%(resolution)s",
-        "%(upload_date>%Y-%m-%d)s",
+        # JSON-encoded, so a tab or newline in a title can't break the line.
+        "%(title)j",
+        "%(uploader)j",
+        "%(duration_string)j",
+        "%(resolution)j",
+        "%(upload_date>%Y-%m-%d)j",
     ]
 )
 _PRINT_DONE = f"after_move:{TOKEN}\tDONE\t%(filepath)s"

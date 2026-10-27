@@ -5,6 +5,7 @@ Download progress arrives on stdout; postprocessor progress arrives on
 stderr. Everything that is not a protocol line is kept in `log`.
 """
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -148,7 +149,8 @@ class DownloadJob(QObject):
             if kind == "FILE":
                 self.file_named.emit(fields[2])
             elif kind == "META":
-                self.metadata.emit(["" if f == "NA" else f for f in fields[2:]])
+                # Each field is JSON (argv.py), or NA when yt-dlp has no value.
+                self.metadata.emit(["" if f == "NA" else str(json.loads(f)) for f in fields[2:]])
             elif kind == "DL":
                 self._handle_dl(fields)
             elif kind == "PP":
