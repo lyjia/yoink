@@ -6,8 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
-from PySide6.QtCore import QSettings, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QProcess, QSettings, QUrl
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -31,11 +31,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from yoink import app
+from yoink import app, binary
 from yoink import ytdlp_config as yc
 
 TITLE = "Preferences"
 BINARY_TIP = "The yt-dlp program that Yoink runs. Leave empty to use the one Yoink finds on its own."
+UPDATE_TIP = "Updates the yt-dlp program that Yoink is using, or shows how to update it."
+UPDATE_TITLE = "Update yt-dlp"
+# What Update says for a build that yt-dlp can't update itself (3.3).
+DIR_BUILD = ("This copy of yt-dlp can't update itself. To update it, download the latest "
+             "release from github.com/yt-dlp/yt-dlp and replace the folder it came in.")
+UNKNOWN_BUILD = ("Yoink can't tell how this copy of yt-dlp was installed. "
+                 "Update it the same way you installed it.")
 REPEATED_TIP = ("This setting appears on more than one line of your config file. "
                 "Edit the file to change it.")
 
@@ -140,14 +147,16 @@ def _row(*widgets: QWidget, stretch: int | None = 0) -> QWidget:
 
 
 class PrefsDialog(QDialog):
-    """Save writes what changed; the caller then reads `binary_changed` and `config_written`."""
+    """Save writes what changed. The caller then reads `binary_changed` and
+    `config_written`, and `updated`, which Cancel does not reset."""
 
     def __init__(self, settings: QSettings, loaded: list[yc.LoadedConfig] | None,
-                 parent: QWidget | None = None) -> None:
+                 binary_path: Path | None, variant: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(TITLE)
         self.settings = settings
-        self.binary_changed = self.config_written = False
+        self.binary_path, self.variant = binary_path, variant  # the binary in use
+        self.binary_changed = self.config_written = self.updated = False
 
         self.page_list = QListWidget()
         self.page_list.setFixedWidth(120)
@@ -198,10 +207,47 @@ class PrefsDialog(QDialog):
         self.binary_setting = self.settings.value(app.KEY_BINARY_PATH, "")
         self.binary_edit = QLineEdit(self.binary_setting, toolTip=BINARY_TIP)
         self.binary_edit.setClearButtonEnabled(True)
+        update = QPushButton("Update", toolTip=f"{UPDATE_TIP}\n{self.binary_path}")
+        update.setEnabled(self.binary_path is not None)
+        update.clicked.connect(self._update)
         page = QWidget()
         form = QFormLayout(page)
-        form.addRow("yt-dlp program:", self._browse_row(self.binary_edit))
+        form.addRow("yt-dlp program:", _row(self._browse_row(self.binary_edit), update))
         return page
+
+    def _update(self) -> None:
+        """Run `yt-dlp -U`, or say how to update this build (3.3)."""
+        if binary.can_self_update(self.variant):
+            output = QPlainTextEdit(readOnly=True, placeholderText="Updating yt-dlp…")
+            proc = QProcess(self)
+            proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+            proc.finished.connect(
+                lambda: output.setPlainText(yc.decode_output(bytes(proc.readAll()))))
+            proc.errorOccurred.connect(lambda _: output.setPlainText(proc.errorString()))
+            proc.start(str(self.binary_path), ["-U"])
+            self._simple_dialog(output)
+            proc.kill()  # if it is still running
+            proc.waitForFinished(1000)
+            self.updated = True
+        elif command := binary.update_command(binary.install_method(self.binary_path, self.variant)):
+            field = QLineEdit(command, readOnly=True)
+            copy = QPushButton("Copy")
+            copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(command))
+            self._simple_dialog(QLabel("To update yt-dlp, run this command:"), _row(field, copy))
+        else:
+            QMessageBox.information(self, UPDATE_TITLE,
+                                    DIR_BUILD if self.variant.endswith("_dir") else UNKNOWN_BUILD)
+
+    def _simple_dialog(self, *widgets: QWidget) -> None:
+        dialog = QDialog(self, windowTitle=UPDATE_TITLE)
+        layout = QVBoxLayout(dialog)
+        for w in widgets:
+            layout.addWidget(w)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.setMinimumWidth(560)
+        dialog.exec()
 
     # ---- yt-dlp page (2.2 to 2.4) -----------------------------------------
 

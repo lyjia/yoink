@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
         # Last config probe result (docs/PHASE1.md 1.1); None until it succeeds.
         self.loaded_configs: list[ytdlp_config.LoadedConfig] | None = None
         self.config_defaults = ytdlp_config.config_defaults(None)
+        self.variant = ""  # the build, from the probe's debug header
         self._probe: QProcess | None = None
 
         self.setWindowTitle(f"{app.APP_TITLE} {__version__}")
@@ -224,7 +225,8 @@ class MainWindow(QMainWindow):
         self._overrides_changed()
         self._set_conflicts(ytdlp_config.find_conflicts(self.loaded_configs or []))
 
-        if ver := ytdlp_config.parse_version(text):
+        self.variant = ver[1] if (ver := ytdlp_config.parse_version(text)) else ""
+        if ver:
             status = f"yt-dlp {ver[0]} ({binary.install_method(self.binary_path, ver[1])})"
         else:
             status = "yt-dlp unknown version"
@@ -247,12 +249,11 @@ class MainWindow(QMainWindow):
         dialog.open()
 
     def show_prefs(self) -> None:
-        dialog = PrefsDialog(self.settings, self.loaded_configs, self)
-        if not dialog.exec():
-            return
+        dialog = PrefsDialog(self.settings, self.loaded_configs, self.binary_path, self.variant, self)
+        dialog.exec()
         if dialog.binary_changed:
             self.binary_path = binary.find_binary(self.settings.value(app.KEY_BINARY_PATH))
-        if dialog.binary_changed or dialog.config_written:
+        if dialog.binary_changed or dialog.config_written or dialog.updated:
             self.refresh_config()
 
     # ---- overrides --------------------------------------------------------
