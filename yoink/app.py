@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QApplication, QStyleFactory
 
 ORG_NAME = "Lyjia"
 APP_NAME = "Yoink"
@@ -15,6 +16,8 @@ APP_TITLE = "Yoink!"
 KEY_DIR = "main/dir"  # override path; empty follows the config
 KEY_COOKIES = "main/cookies"  # empty follows the config, "none", or a browser
 KEY_GEOMETRY = "main/geometry"
+KEY_HEADER = "main/header"  # prefix; see main_window.HEADER_KEY
+KEY_STYLE = "main/style"  # a QStyleFactory key; empty is the system default
 KEY_BINARY_PATH = "ytdlp/binary_path"
 _KEY_LAST_DIR = "main/last_dir"  # Phase 0's name for KEY_DIR
 
@@ -32,6 +35,18 @@ def migrate_settings(s: QSettings) -> None:
         if not s.contains(KEY_DIR):
             s.setValue(KEY_DIR, s.value(_KEY_LAST_DIR))
         s.remove(_KEY_LAST_DIR)
+
+
+_default_style = ""  # the style Qt picked, captured before any change
+
+
+def apply_style(name: str) -> None:
+    """Use a QStyleFactory style; empty or unknown restores the one Qt picked."""
+    global _default_style
+    _default_style = _default_style or QApplication.style().objectName()
+    name = name if name in QStyleFactory.keys() else _default_style
+    if name.lower() != QApplication.style().objectName():
+        QApplication.setStyle(name)
 
 
 def setup_logging(level: int = logging.INFO) -> None:

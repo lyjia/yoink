@@ -1,17 +1,41 @@
+import codecs
+import locale
+import os
+from datetime import date
+
 import pytest
 
 from yoink.ytdlp_config import (
     COOKIES,
     DIRECTORY,
+    Blank,
+    Comment,
+    ConfigChanged,
     ConfigDefaults,
     LoadedConfig,
     Occurrence,
+    Opaque,
+    Option,
     config_defaults,
     config_values,
+    decode_output,
     find_conflicts,
+    format_lines,
+    is_stale,
+    join_cookie_spec,
+    matches_probe,
+    owned_lines,
+    parse_lines,
     parse_probe,
     parse_version,
+    read_config,
+    set_option,
     shared_value,
+    split_cookie_spec,
+    to_config_path,
+    to_display_path,
+    unmanaged,
+    write_config,
 )
 
 SAMPLE = """\
@@ -169,6 +193,23 @@ def test_parse_version_missing(text):
     assert parse_version(text) is None
 
 
+@pytest.mark.parametrize(("label", "stale"), [
+    ("stable@2026.01.11 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", False),  # 89 days old
+    ("stable@2026.01.09 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", True),  # 91 days old
+    ("nightly@2026.01.09.233505 from yt-dlp/yt-dlp-nightly-builds [0123abcde] (zip)", True),
+    ("yt-dlp/yt-dlp@stable build 2026.01.09 [0123abcde] (pip)", True),
+    ("someone/yt-dlp-fork@2026.01.09 [0123abcde] (source)", False),  # not an official build
+    ("stable@unknown from yt-dlp/yt-dlp (pip)", False),
+])
+def test_is_stale(label, stale):
+    probe = f"{CMDLINE}[debug] yt-dlp version {label}\n"
+    assert is_stale(probe, date(2026, 4, 10)) is stale
+
+
+def test_is_stale_without_header():
+    assert is_stale(SAMPLE, date(2026, 4, 10)) is False
+
+
 @pytest.mark.parametrize(("loaded", "expected"), [
     (None, ConfigDefaults(None, None, False)),  # probe failed
     ([], ConfigDefaults("none", None, False)),
@@ -184,3 +225,145 @@ def test_parse_version_missing(text):
 ])
 def test_config_defaults(loaded, expected):
     assert config_defaults(loaded) == expected
+
+
+# ---- editing the user config (docs/PHASE2.md section 1) ----------------------
+
+CONFIG = "# my config\n\n--no-mtime\n-f best\n--format best  # mine\n--paths temp:/t\n"
+
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("\n", Blank("\n")),
+    ("   \r\n", Blank("   \r\n")),
+    ("  # note\n", Comment("  # note\n")),
+    ("--no-mtime\n", Option("--no-mtime\n", "--no-mtime", None)),
+    ("--format best\n", Option("--format best\n", "--format", "best")),
+    ("--format=best", Option("--format=best", "--format", "best")),
+    ("--output '%(title)s x' # c\r\n", Option("--output '%(title)s x' # c\r\n", "--output",
+                                               "%(title)s x")),
+    ("-f best\n", Opaque("-f best\n")),
+    ("--no-mtime --embed-subs\n", Opaque("--no-mtime --embed-subs\n")),
+    ("--format 'best\n", Opaque("--format 'best\n")),
+    ("stray\n", Opaque("stray\n")),
+])
+def test_parse_lines(raw, expected):
+    assert parse_lines(raw) == [expected]
+    assert format_lines(parse_lines(raw)) == raw
+
+
+@pytest.mark.parametrize("text", [CONFIG, CONFIG.replace("\n", "\r\n"), "--a\n--b", ""])
+def test_format_round_trips(text):
+    assert format_lines(parse_lines(text)) == text
+
+
+@pytest.mark.parametrize(("text", "name", "value", "expected"), [
+    ("--format best  # mine\n", "--format", "a b", "--format 'a b'  # mine\n"),
+    ("--format=best\n", "--format", "it's", "--format 'it'\"'\"'s'\n"),
+    ("--format best\n", "--format", "best", "--format best\n"),  # unchanged: not rewritten
+    ("--format best\n--no-mtime\n", "--format", "", "--no-mtime\n"),
+    ("--embed-subs\n", "--embed-subs", False, ""),
+    ("-f best\r\n", "--embed-subs", True, "-f best\r\n--embed-subs\r\n"),
+    ("-f best", "--limit-rate", "5M", "-f best\n--limit-rate 5M\n"),
+    ("", "--limit-rate", "5M", "--limit-rate 5M\n"),
+    ("", "--limit-rate", "", ""),
+    ("--paths temp:/t\n", "--paths", "/x", "--paths temp:/t\n--paths /x\n"),
+    ("--paths home:/h\n", "--paths", "/x", "--paths /x\n"),
+])
+def test_set_option(text, name, value, expected):
+    assert format_lines(set_option(parse_lines(text), name, value)) == expected
+
+
+def test_managed_lines():
+    lines = parse_lines(CONFIG + "--sub-langs en\n--sub-langs=es\n--paths home:/h\n")
+    owned = owned_lines(lines, ["--format", "--sub-langs", "--paths", "--proxy"])
+    assert {n: [o.value for o in v] for n, v in owned.items()} == {
+        "--format": ["best"], "--sub-langs": ["en", "es"], "--paths": ["home:/h"], "--proxy": [],
+    }
+    # Repeated options, unmanaged options, and Opaque lines go to the warning box.
+    assert [line.raw for line in unmanaged(lines, owned)] == [
+        "--no-mtime\n", "-f best\n", "--paths temp:/t\n", "--sub-langs en\n", "--sub-langs=es\n",
+    ]
+
+
+@pytest.mark.parametrize(("data", "encoding"), [
+    (codecs.BOM_UTF8 + "--format é\n".encode(), "utf-8"),
+    (codecs.BOM_UTF16_LE + "--format é\r\n".encode("utf-16-le"), "utf-16-le"),
+    ("# coding: latin-1\n--format é\n".encode("latin-1"), "latin-1"),
+    (b"--format best\n", locale.getpreferredencoding(False)),
+])
+def test_read_write_round_trip(tmp_path, data, encoding):
+    path = tmp_path / "config"
+    path.write_bytes(data)
+    config = read_config(path)
+    assert config.encoding == encoding
+    write_config(config, set_option(config.lines, "--proxy", "p"))
+    assert path.read_bytes().startswith(data)
+    write_config(read_config(path), config.lines)
+    assert path.read_bytes() == data
+
+
+def test_new_file_gets_utf8_bom(tmp_path):
+    path = tmp_path / "yt-dlp" / "config"
+    config = read_config(path)
+    write_config(config, set_option(config.lines, "--limit-rate", "5M"))
+    assert path.read_bytes() == codecs.BOM_UTF8 + b"--limit-rate 5M\n"
+
+
+def test_write_failures_leave_file_untouched(tmp_path):
+    path = tmp_path / "config"
+    path.write_bytes(b"# coding: cp1252\n--no-mtime\n")
+    config = read_config(path)
+    with pytest.raises(UnicodeEncodeError):
+        write_config(config, set_option(config.lines, "--output", "\U0001f600"))
+    path.write_bytes(b"# coding: cp1252\n--no-mtime\n--edited\n")
+    with pytest.raises(ConfigChanged):
+        write_config(config, set_option(config.lines, "--proxy", "p"))
+    assert path.read_bytes() == b"# coding: cp1252\n--no-mtime\n--edited\n"
+    assert [p.name for p in tmp_path.iterdir()] == ["config"]
+
+
+@pytest.mark.parametrize(("text", "tokens", "matches"), [
+    ("# c\n--format 'a b'  # x\n-f\tbest\n", ["--format", "a b", "-f", "best"], True),
+    ("--format 'a\nb'\n", ["--format", "a\nb"], False),  # a value spanning two lines
+    ("--format a\\\nb\n", ["--format", "a\nb"], False),  # a backslash ending a line
+    ("--password x\n-p\ny\n", ["--password", "PRIVATE", "-p", "PRIVATE"], True),
+    ("--username=x\n", ["--username=PRIVATE"], True),
+    ("--username=x\n", ["--username=x"], False),
+])
+def test_matches_probe(text, tokens, matches):
+    assert matches_probe(parse_lines(text), tokens) is matches
+
+
+@pytest.mark.parametrize(("spec", "parts"), [
+    ("firefox", ("firefox", "", "", "")),
+    ("chrome+KWALLET6", ("chrome", "KWALLET6", "", "")),
+    ("chrome:Profile 2", ("chrome", "", "Profile 2", "")),
+    ("firefox::Work", ("firefox", "", "", "Work")),
+    ("chrome+basictext:Default::none", ("chrome", "BASICTEXT", "Default", "none")),
+])
+def test_cookie_spec(spec, parts):
+    assert split_cookie_spec(spec) == parts
+    assert split_cookie_spec(join_cookie_spec(*parts)) == parts
+
+
+def test_paths():
+    assert to_config_path("/home/u/My Videos/") == "/home/u/My Videos"
+    assert to_config_path("") == to_display_path("") == ""
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX paths")
+def test_paths_posix():
+    assert to_display_path("/home/u//Videos/") == "/home/u/Videos"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows paths")
+def test_paths_windows():
+    assert to_config_path("C:\\Users\\u\\Videos") == "C:/Users/u/Videos"
+    assert to_display_path("C:/Users/u/Videos") == "C:\\Users\\u\\Videos"
+    assert format_lines(set_option([], "--paths", to_config_path("C:\\My Videos"))) \
+        == "--paths 'C:/My Videos'\n"
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", locale.getpreferredencoding(False)])
+def test_decode_output(encoding):
+    assert decode_output("caf\u00e9\n".encode(encoding)) == "caf\u00e9\n"

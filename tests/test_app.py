@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from yoink import app
 
 
@@ -10,7 +12,7 @@ def test_settings_dir_redirects_to_ini(tmp_path, monkeypatch):
     s = ini(tmp_path, monkeypatch)
     s.setValue(app.KEY_COOKIES, "none")
     s.sync()
-    assert s.fileName() == str(tmp_path / "yoink.ini")
+    assert Path(s.fileName()) == tmp_path / "yoink.ini"
     assert "cookies=none" in (tmp_path / "yoink.ini").read_text()
 
 

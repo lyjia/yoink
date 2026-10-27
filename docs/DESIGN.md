@@ -42,13 +42,13 @@ yoink/
   argv.py            build the yt-dlp command line for one download
   job.py             DownloadJob: QProcess wrapper, progress line parser
   ui/
-    main_window.py   URL input, override controls, downloads table
+    main_window.py   URL input, override controls, downloads table and View menu (2.5)
     config_notice.py config override details dialog
-    prefs_dialog.py  tabbed preferences (Yoink / yt-dlp / Domains)
+    prefs_dialog.py  preferences: page list with Yoink, yt-dlp (Phase 2), Domains (Phase 3)
     log_view.py      per-job raw output viewer
 docs/DESIGN.md
 pyproject.toml
-build/nuitka.sh, build/nuitka.ps1
+scripts/build.sh   Nuitka standalone test build into dist/
 ```
 
 Dependencies: PySide6, requests (binary download only). Python 3.11+.
@@ -58,11 +58,22 @@ Dependencies: PySide6, requests (binary download only). Python 3.11+.
 | Data                         | Where                                               |
 |------------------------------|-----------------------------------------------------|
 | yt-dlp-native options        | yt-dlp user config file (section 3)                 |
-| Window geometry, main-window overrides (directory, cookies), binary path, update policy | QSettings (`Lyjia/Yoink`) |
+| Window geometry, main-window overrides (directory, cookies), downloads table layout, theme, binary path | QSettings (`Lyjia/Yoink`) |
 | Per-domain overrides         | `overrides.json` in Yoink's app-data dir            |
 
 Per-domain rules are a list of structured records; QSettings handles those
 poorly, so they get a JSON file next to the QSettings store.
+
+The downloads table layout (column widths, order, and hidden columns) is
+the header state Qt saves, stored under
+`main/header/<crc32 of the column names>`. Qt restores it by column index,
+so a different column list gets a different key and starts from the
+defaults (2.5).
+
+Theme: `main/style` holds a `QStyleFactory` key, chosen on the Yoink page
+of Preferences, or is empty for the system default (the style Qt picks).
+It applies at startup and on Save; an unknown key falls back to the
+system default.
 
 If `YOINK_SETTINGS_DIR` is set, QSettings is stored as `yoink.ini` in that
 directory instead of the OS-native store. The sandbox
@@ -82,6 +93,7 @@ yt-dlp
   --progress-template "download:<YOINK-TSV>"
   --progress-template "postprocess:<YOINK-PP-TSV>"
   --print "before_dl:YOINK\tFILE\t%(filename)s"
+  --print "before_dl:YOINK\tMETA\t%(title)j\t%(uploader)j\t%(duration_string)j\t%(resolution)j\t%(upload_date>%Y-%m-%d)j"
   --print "after_move:YOINK\tDONE\t%(filepath)s"
   -- <url>
 ```
@@ -92,6 +104,11 @@ full progress dict embeds `info_dict` and produces multi-kilobyte lines:
 ```
 download:YOINK\tDL\t%(progress.status)s\t%(progress.downloaded_bytes)s\t%(progress.total_bytes)s\t%(progress.total_bytes_estimate)s\t%(progress.speed)s\t%(progress.eta)s
 ```
+
+The META line carries five fields for the table's metadata columns (2.5):
+title, uploader, duration_string, resolution, and upload_date. Each is
+JSON-encoded (`%(field)j`), so a tab or newline in a title can't shift the
+fields. `NA` means yt-dlp has no value, and shows as an empty cell.
 
 `--print` implies `--simulate`, hence the explicit `--no-simulate`. Both
 exact flag behaviour and the postprocess template fields must be verified
@@ -118,11 +135,12 @@ working directory is always the Downloads folder, so a config with only
 
 `DownloadJob(QObject)` owns one `QProcess`. It splits stdout on newlines,
 routes lines starting with `YOINK\t` to typed signals
-(`file_named`, `progress`, `postprocessing`, `done`), and appends everything
-else to an in-memory log. States: `queued`, `starting`, `downloading`,
-`postprocessing`, `finished`, `failed`, `cancelled`. Exit code non-zero with
-no `DONE` line means `failed`; the last stderr lines become the row's error
-text.
+(`file_named`, `metadata`, `progress`, `postprocessing`, `done`), and appends
+everything else to an in-memory log. `metadata` carries the five META
+fields (2.2), each an empty string where yt-dlp has no value. States:
+`queued`, `starting`, `downloading`, `postprocessing`, `finished`,
+`failed`, `cancelled`. Exit code non-zero with no `DONE` line means
+`failed`; the last stderr lines become the row's error text.
 
 Yoink passes `--progress` on the command line, which beats `--quiet` or
 `--no-progress` in a user config, so the protocol lines still arrive.
@@ -134,6 +152,30 @@ as supported, not an error.
 Playlists: each entry produces its own `FILE`/`DL`/`DONE` sequence. Phase 0
 shows them in one row with the current filename; splitting into child rows
 is backlog.
+
+### 2.5 Downloads table
+
+One row per download. The columns, in order: status icon, Status, Scheme,
+Host, Path, Filename, Downloaded, Total, Speed, Progress, Title, Uploader,
+Duration, Resolution, Upload date, and the row's buttons. Scheme and the
+five metadata columns (Title to Upload date, from the META line in 2.2)
+are hidden by default. The Path cell's tooltip is the full URL.
+
+- Every column is `QHeaderView.ResizeMode.Interactive` and movable.
+  Default widths are set once at startup; Yoink never resizes a column to
+  fit its contents.
+- The View menu has a checkable item for each column except the buttons.
+- The layout (widths, order, and hidden columns) is saved on close and
+  restored at start (2.1). **Reset table layout** on the Yoink page of
+  Preferences restores the defaults when the dialog closes, even on
+  Cancel.
+- The status icon is a `QStyle.StandardPixmap` for each job state, so no
+  image files ship with the app.
+- Buttons: Cancel while the download runs. Once it ends, Clear (remove the
+  row) and, for a finished row with a known file, Open, whose menu has
+  Open folder.
+- The progress bar is removed when a download ends, and the Speed cell is
+  emptied.
 
 ## 3. yt-dlp config editing (`ytdlp_config.py`)
 
@@ -147,6 +189,10 @@ not repeat that search. If yt-dlp loaded no user config, Yoink creates:
 - Linux/macOS: `${XDG_CONFIG_HOME:-~/.config}/yt-dlp/config`
 - Windows: `%APPDATA%\yt-dlp\config`
 
+On Windows, yt-dlp checks `XDG_CONFIG_HOME` (or `~/.config`) before
+`%APPDATA%` and honours both. Yoink creates the file under `%APPDATA%`
+only when yt-dlp loaded no user config.
+
 The Preferences dialog shows the path. Portable, home, system, and
 `--config-locations` files are never edited.
 
@@ -156,15 +202,29 @@ The file is a list of command-line arguments, one or more per line, shell-style
 quoting, `#` comments. Yoink parses it into a list of `Line` records:
 
 - `Comment` / `Blank`: preserved verbatim.
-- `Option(name, value, raw)`: a line containing exactly one long option with
+- `Option(raw, name, value)`: a line containing exactly one long option with
   an optional value. Editable.
 - `Opaque(raw)`: anything else (multiple options on one line, short flags,
-  unparseable). Preserved verbatim, shown read-only in the structured view.
+  unparseable). Preserved verbatim, listed read-only in the warning box
+  (3.3).
 
 Editing an option rewrites only that line. Adding one appends at the end.
-Removing one deletes the line. Writing re-emits every record in order. A raw
-text tab offers full control and bypasses the structured model; saving from
-it re-parses.
+Removing one deletes the line. Writing re-emits every record in order.
+There is no raw text editor. Every line Yoink does not manage is listed,
+read-only, in a warning box whose "Open in editor" button opens the file in
+the system's default application (`QDesktopServices.openUrl`).
+
+yt-dlp's `Config.read_file` picks the encoding from a byte-order mark or a
+`# coding:` first line, otherwise the locale encoding (cp1252 on Windows),
+then runs `shlex.split(contents, comments=True)` over the whole file. The
+writer follows from that:
+
+- Values are quoted with `shlex.quote`.
+- The file is written to a temporary file in the same directory, then moved
+  into place with `os.replace`.
+- An existing file keeps its encoding and byte-order mark. A new file is
+  written as UTF-8 with a BOM, so yt-dlp never falls back to the locale
+  encoding.
 
 yt-dlp tokenizes the whole file with `shlex.split` in POSIX mode, so a
 backslash is an escape character and `C:\Users\tom` reads as `C:Userstom`.
@@ -173,9 +233,9 @@ native form (`os.path.normpath`), and every path written to the config, or
 compared with probe tokens, uses forward slashes (`Path.as_posix()`). This
 applies wherever Yoink displays a path, including the main window's
 directory placeholder and the override details dialog, both of which show
-values taken from probe tokens. The raw text tab is the one exception: it
-shows the file as yt-dlp reads it. Paths passed on the command line (`-P`)
-are not tokenized by yt-dlp and stay native.
+values taken from probe tokens. The warning box is the one exception: it
+shows each line as written in the file. Paths passed on the command line
+(`-P`) are not tokenized by yt-dlp and stay native.
 
 ### 3.3 Structured view
 
@@ -186,8 +246,8 @@ A curated subset of options gets proper widgets. Initial set:
 | `--paths` / `-P`             | directory picker            |
 | `--output` / `-o`            | line edit with hint         |
 | `--format` / `-f`            | combo of presets + free text|
-| `--cookies-from-browser`     | browser combo + profile     |
-| `--cookies`                  | file picker                 |
+| `--cookies-from-browser`     | checkbox; browser combo; profile, container, and keyring fields, each enabled only where the browser supports it |
+| `--cookies`                  | checkbox + file picker      |
 | `--embed-thumbnail`, `--embed-metadata`, `--embed-subs`, `--write-subs` | checkboxes |
 | `--sub-langs`                | line edit                   |
 | `--merge-output-format`      | combo                       |
@@ -196,9 +256,12 @@ A curated subset of options gets proper widgets. Initial set:
 | `--proxy`                    | line edit                   |
 | `--limit-rate`               | line edit                   |
 
-Everything else is visible in an "Other options" list (name and value, edit as
-text) and in the raw tab. Growing the curated set is cheap: one table entry
-mapping option name to widget type.
+Every widget has a tooltip that explains the option in plain language for
+nontechnical users. Every other line in the file (other options, short
+flags, lines carrying several options, unparseable lines) is listed
+read-only, as written, in a warning box below the widgets, with the file's
+path and an "Open in editor" button. Growing the curated set is cheap: one
+table entry mapping option name to widget type.
 
 ### 3.4 Config probe and overrides indicator
 
@@ -252,8 +315,8 @@ the path yt-dlp actually wrote to.
 
 Before saving, Phase 2's editor compares its line-level parse with the
 probe's tokens for the same file. If they differ (for example a quoted
-value spanning lines, or a `#` inside a word), the structured view is
-read-only for that file.
+value spanning lines), the yt-dlp page is read-only. The probe prints
+login values as `PRIVATE`, so the comparison masks them the same way.
 
 ## 4. Cookies from browser
 
@@ -308,7 +371,7 @@ Resolution per download:
 
 UI:
 
-- The primary editor is the Domains tab in Preferences: a flat table with
+- The primary editor is the Domains page in Preferences: a flat table with
   one row per domain and one column per supported override (domain,
   destination, cookies, extra args). Add / edit / remove rows in place.
   New override types become new columns.
@@ -413,14 +476,13 @@ using the resolved path:
 | `uv/tools` | uv tool |
 | anything else | pip |
 
-The probe also passes on yt-dlp's own staleness warning ("Your yt-dlp
-version (…) is older than 90 days!"). Yoink shows it in the status bar,
-because an old yt-dlp is the usual reason that sites and cookie extraction
-break.
-
-On the macOS single-file build (`darwin_exe`), the status bar warns that
-each download starts about 6 s late, and suggests the folder build or
-Yoink's own copy.
+yt-dlp's own staleness warning ("Your yt-dlp version (…) is older than 90
+days!") never appears in the probe output: yt-dlp emits it only when neither
+`--update` nor `--no-update` is given, and the probe must pass `--no-update`
+(a config containing `--update` would otherwise update yt-dlp on every
+probe). Yoink applies the same rule itself, from the version date in the
+debug header, and shows the result in the status bar, because an old yt-dlp
+is the usual reason that sites and cookie extraction break.
 
 ### 6.4 Updating
 
@@ -434,6 +496,11 @@ otherwise tells the user what to run:
 | `*_dir`, Yoink-managed | Yoink re-downloads it (6.5) |
 | `pip` | shows the right command for the detected method (`brew upgrade yt-dlp`, `pipx upgrade yt-dlp`, `uv tool upgrade yt-dlp`, or `python3 -m pip install -U yt-dlp`) with a Copy button; Yoink never runs package managers itself |
 | starred or unknown | shows yt-dlp's own update hint |
+
+On Windows a folder build reports `win_exe`, because of a path-separator
+bug in yt-dlp's variant detection. Update therefore runs `-U` on it, and
+yt-dlp replaces the folder's exe with the single-file build. The `_dir`
+explanation is reachable only on macOS and Linux.
 
 ### 6.5 Yoink-managed copy (Phase 4)
 
@@ -577,7 +644,7 @@ screen stays reachable later through Help > Set up yt-dlp….
 | No yt-dlp found | discovery (6.2) finds nothing | setup screen |
 | Found, but macOS will block it | quarantine flag on the binary or `_internal/` (6.6) | setup screen offering repair (C) |
 | Found, but it doesn't run | the probe fails: SIGKILL with no output (6.6), a zipapp with too old a Python (6.1), or a crash | setup screen with yt-dlp's error text |
-| Found and working, but stale or slow | the probe's staleness warning; `darwin_exe` (6.3) | non-blocking status-bar notice linking to the screen |
+| Found and working, but stale | Yoink's staleness check (6.3) | non-blocking status-bar notice linking to the screen |
 
 **Flow**
 
@@ -678,15 +745,19 @@ The sandbox (`scripts/sandbox.sh`) needs to cover each trigger:
 - **Quarantined copy:** add the flag to a copy with
   `xattr -w com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" <file>`.
 - **Non-running binary:** a binary path pointing at `/usr/bin/false`.
-- **Stale version:** a fake binary script that prints the probe output,
-  including the staleness warning.
+- **Stale version:** a fake binary script that prints the probe output
+  with a version date more than 90 days old.
 
 ## 7. Packaging
 
-Nuitka, `--standalone --enable-plugin=pyside6`, optional `--onefile`. The
+Nuitka, `--mode=app-dist --enable-plugin=pyside6` (a standalone folder, or a
+`.app` bundle on macOS), optionally `--mode=onefile`. The
 yt-dlp binary is not bundled; it is fetched on first run or found on PATH.
-Build scripts for Linux and Windows live under `build/`. CI builds are
-backlog.
+`scripts/build.sh` (Git Bash on Windows, bash on Linux and macOS) makes a
+standalone test build in `dist/`, which git ignores: `dist/yoink.dist/` on
+Windows and Linux, `dist/yoink.app` on macOS. It includes Yoink's package
+metadata, because `yoink.__version__` is read from it. Release builds and
+CI builds are backlog.
 
 macOS: Yoink.app runs into the same Gatekeeper problem as yt-dlp (6.6). An
 unsigned app downloaded in a browser is blocked until the user clicks
@@ -718,16 +789,20 @@ the config (2.3). Overrides indicator and dialog. No config writes. Scope:
 PHASE1.md.
 
 **Phase 2: Preferences dialog.**
-Yoink tab: binary path, with every candidate found by 6.2 listed along
-with its version and install method, and update policy. yt-dlp tab with
-the structured view, "Other options" list, and raw text tab. This is the
-first config write: the line model, round-trip writer, and consistency
-check (3.2, 3.4). The status bar, which shows the version since Phase 1,
-gains the install method (6.3), yt-dlp's staleness warning, and the
-slow-start warning for the macOS single-file build. Update button per 6.4.
+File > Preferences…, a page list with two pages. yt-dlp page: grouped widgets with a
+plain-language tooltip for each option in 3.3, and a read-only warning box
+listing every other line of the user config. This is the first config
+write: the line model, round-trip writer, and consistency check (3.2, 3.4).
+Yoink page: binary path and the Update button (6.4). The status bar, which
+shows the version since Phase 1, gains the install method (6.3) and a
+staleness warning. Listing every candidate binary, discovery in
+well-known locations, and the managed copy are Phase 4. Scope: [PHASE2.md](PHASE2.md).
+Done; the status and deviations are at the top of PHASE2.md. Main-window
+table work (2.5), a theme setting (2.1), and the build script (section 7)
+landed in the same phase.
 
 **Phase 3: Per-domain overrides.**
-`overrides.py`, Domains tab, URL-driven directory prefill, pin button,
+`overrides.py`, Domains page, URL-driven directory prefill, pin button,
 cookies override. `argv.py` grows the resolution order from section 5.
 
 **Phase 4: Onboarding.**
@@ -771,6 +846,10 @@ retry failed, drag-and-drop URLs, system tray, CI builds.
   convenience with a tooltip and a confirmation on overwrite.
 - With no directory from the user, a rule, or the config, Yoink falls back to
   the OS Downloads folder (section 2.3).
+- The yt-dlp page is widgets plus a read-only list of the lines Yoink does
+  not manage, with no raw text editor. Only a widget can apply the path rule
+  in 3.2: a raw editor would show and accept backslash paths that yt-dlp's
+  POSIX tokenizer silently mangles.
 
 ## 10. Feature wishlist
 

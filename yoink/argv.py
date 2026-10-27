@@ -5,6 +5,8 @@ command line left to right, so anything Yoink must control goes last.
 See docs/DESIGN.md sections 2.2 and 2.3.
 """
 
+import os
+
 from PySide6.QtCore import QStandardPaths
 
 # Every protocol line Yoink emits through yt-dlp starts with this token
@@ -32,11 +34,25 @@ _PP_TEMPLATE = "\t".join(
     ]
 )
 _PRINT_FILE = f"before_dl:{TOKEN}\tFILE\t%(filename)s"
+_PRINT_META = "\t".join(
+    [
+        f"before_dl:{TOKEN}",
+        "META",
+        # JSON-encoded, so a tab or newline in a title can't break the line.
+        "%(title)j",
+        "%(uploader)j",
+        "%(duration_string)j",
+        "%(resolution)j",
+        "%(upload_date>%Y-%m-%d)j",
+    ]
+)
 _PRINT_DONE = f"after_move:{TOKEN}\tDONE\t%(filepath)s"
 
 
 def default_download_dir() -> str:
-    return QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
+    # Native separators: Qt returns forward slashes on Windows.
+    return os.path.normpath(
+        QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation))
 
 
 def build_argv(url: str, directory: str | None = None, cookies: str | None = None) -> list[str]:
@@ -65,6 +81,7 @@ def build_argv(url: str, directory: str | None = None, cookies: str | None = Non
         "--progress-template", _DL_TEMPLATE,
         "--progress-template", _PP_TEMPLATE,
         "--print", _PRINT_FILE,
+        "--print", _PRINT_META,
         "--print", _PRINT_DONE,
         "--",
         url,
