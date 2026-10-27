@@ -364,6 +364,6 @@ def test_paths_windows():
         == "--paths 'C:/My Videos'\n"
 
 
-@pytest.mark.parametrize("data", ["caf\u00e9\n".encode(), "caf\u00e9\n".encode(locale.getpreferredencoding(False))])
-def test_decode_output(data):
-    assert decode_output(data) == "caf\u00e9\n"
+@pytest.mark.parametrize("encoding", ["utf-8", locale.getpreferredencoding(False)])
+def test_decode_output(encoding):
+    assert decode_output("caf\u00e9\n".encode(encoding)) == "caf\u00e9\n"

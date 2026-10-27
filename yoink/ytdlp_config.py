@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, TypeGuard
 
 COOKIES = "cookies"
 DIRECTORY = "directory"
@@ -289,7 +289,7 @@ def format_lines(lines: list[Line]) -> str:
     return "".join(line.raw for line in lines)
 
 
-def _owns(line: Line, name: str) -> bool:
+def _owns(line: Line, name: str) -> TypeGuard[Option]:
     """Whether `line` belongs to the widget for option `name`."""
     if not isinstance(line, Option) or line.name != name:
         return False
@@ -340,7 +340,7 @@ def set_option(lines: list[Line], name: str, value: str | bool) -> list[Line]:
         return [*lines[:i], _classify(new + rest), *lines[i + 1:]]
     if new is None:
         return lines
-    end = (lines and _ending(lines[0].raw)) or "\n"
+    end = (_ending(lines[0].raw) if lines else "") or "\n"
     if lines and not _ending(lines[-1].raw):
         lines = [*lines[:-1], _classify(lines[-1].raw + end)]
     return [*lines, _classify(new + end)]
@@ -450,5 +450,5 @@ def to_config_path(path: str) -> str:
     return Path(path).as_posix() if path else ""
 
 
-def to_display_path(value: str) -> str:
+def to_display_path(value: str | None) -> str:
     return os.path.normpath(value) if value else ""

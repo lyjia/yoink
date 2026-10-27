@@ -32,7 +32,26 @@ from PySide6.QtWidgets import (
 )
 
 from yoink import app, binary
-from yoink import ytdlp_config as yc
+from yoink.ytdlp_config import (
+    BROWSERS,
+    ConfigChanged,
+    ConfigFile,
+    LoadedConfig,
+    Option,
+    decode_output,
+    default_config_path,
+    home_path,
+    join_cookie_spec,
+    matches_probe,
+    owned_lines,
+    read_config,
+    set_option,
+    split_cookie_spec,
+    to_config_path,
+    to_display_path,
+    unmanaged,
+    write_config,
+)
 
 TITLE = "Preferences"
 BINARY_TIP = "The yt-dlp program that Yoink runs. Leave empty to use the one Yoink finds on its own."
@@ -127,10 +146,10 @@ COOKIES_PATH_TIP = "The cookies file to use."
 class _Field(NamedTuple):
     row: QWidget  # disabled as a whole when the option is repeated
     get: Callable[[], str | bool]  # the value for set_option
-    set: Callable[[yc.Option | None], None]  # show the option's line, or None
+    set: Callable[[Option | None], None]  # show the option's line, or None
 
 
-def _value(line: yc.Option | None) -> str:
+def _value(line: Option | None) -> str:
     return (line.value or "") if line else ""
 
 
@@ -150,7 +169,7 @@ class PrefsDialog(QDialog):
     """Save writes what changed. The caller then reads `binary_changed` and
     `config_written`, and `updated`, which Cancel does not reset."""
 
-    def __init__(self, settings: QSettings, loaded: list[yc.LoadedConfig] | None,
+    def __init__(self, settings: QSettings, loaded: list[LoadedConfig] | None,
                  binary_path: Path | None, variant: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(TITLE)
@@ -222,7 +241,7 @@ class PrefsDialog(QDialog):
             proc = QProcess(self)
             proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
             proc.finished.connect(
-                lambda: output.setPlainText(yc.decode_output(bytes(proc.readAll()))))
+                lambda: output.setPlainText(decode_output(bytes(proc.readAll()))))
             proc.errorOccurred.connect(lambda _: output.setPlainText(proc.errorString()))
             proc.start(str(self.binary_path), ["-U"])
             self._simple_dialog(output)
@@ -251,7 +270,7 @@ class PrefsDialog(QDialog):
 
     # ---- yt-dlp page (2.2 to 2.4) -----------------------------------------
 
-    def _ytdlp_page(self, loaded: list[yc.LoadedConfig] | None) -> QWidget:
+    def _ytdlp_page(self, loaded: list[LoadedConfig] | None) -> QWidget:
         content = QWidget()
         groups = QVBoxLayout(content)
         forms: dict[str, QFormLayout] = {}
@@ -269,7 +288,7 @@ class PrefsDialog(QDialog):
 
         path, self.config, self.readonly = self._load(loaded)
         lines = self.config.lines if self.config else []
-        owned = yc.owned_lines(lines, self.fields)
+        owned = owned_lines(lines, self.fields)
         for name, field in self.fields.items():
             field.set(owned[name][0] if len(owned[name]) == 1 else None)
             if len(owned[name]) > 1:
@@ -280,11 +299,11 @@ class PrefsDialog(QDialog):
         content.setEnabled(not self.readonly)
 
         # The warning box (2.4): the file, then every line no widget shows.
-        path_label = QLabel(yc.to_display_path(str(path)))
+        path_label = QLabel(to_display_path(str(path)))
         open_btn = QPushButton("Open in editor")
         open_btn.setEnabled(path.exists())
         open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))))
-        other = "\n".join(line.raw.rstrip("\r\n") for line in yc.unmanaged(lines, owned))
+        other = "\n".join(line.raw.rstrip("\r\n") for line in unmanaged(lines, owned))
         note = QLabel(self.readonly or KEPT, wordWrap=True)
         note.setHidden(not (self.readonly or other))
         listing = QPlainTextEdit(other, readOnly=True, maximumHeight=110)
@@ -303,19 +322,19 @@ class PrefsDialog(QDialog):
         return page
 
     @staticmethod
-    def _load(loaded: list[yc.LoadedConfig] | None) -> tuple[Path, yc.ConfigFile | None, str]:
+    def _load(loaded: list[LoadedConfig] | None) -> tuple[Path, ConfigFile | None, str]:
         """The file to edit, its contents, and why the page is read-only ("" if editable)."""
         user = next((c for c in loaded or [] if c.label == "User"), None)
-        path = Path(user.path) if user else yc.default_config_path()
+        path = Path(user.path) if user and user.path else default_config_path()
         if loaded is None:
             return path, None, PROBE_FAILED
         if not user and path.exists():
             return path, None, NOT_LOADED
         try:
-            config = yc.read_config(path)
+            config = read_config(path)
         except (OSError, UnicodeDecodeError, LookupError) as e:  # LookupError: bad "# coding:"
             return path, None, f"Yoink can't read this file: {e}"
-        if user and (config.data is None or not yc.matches_probe(config.lines, user.tokens)):
+        if user and (config.data is None or not matches_probe(config.lines, user.tokens)):
             return path, config, MISMATCH
         return path, config, ""
 
@@ -342,19 +361,19 @@ class PrefsDialog(QDialog):
             return label, _Field(edit, lambda: edit.text().strip(),
                                  lambda line: edit.setText(_value(line)))
         # A folder or archive path: native in the widget, forward slashes in the config.
-        def set_(line: yc.Option | None) -> None:
+        def set_(line: Option | None) -> None:
             value = _value(line)
             if kind == "folder":  # --paths: drop a "home:" prefix
-                value = yc.home_path(value) or ""
-            edit.setText(yc.to_display_path(value))
+                value = home_path(value)
+            edit.setText(to_display_path(value))
 
         return label, _Field(self._browse_row(edit, kind),
-                             lambda: yc.to_config_path(edit.text().strip()), set_)
+                             lambda: to_config_path(edit.text().strip()), set_)
 
     def _browser_field(self, label: str, tip: str) -> _Field:
         check = QCheckBox(label, toolTip=tip)
         browser = QComboBox(toolTip=BROWSER_TIPS["browser"])
-        browser.addItems(yc.BROWSERS)
+        browser.addItems(BROWSERS)
         profile = QLineEdit(toolTip=BROWSER_TIPS["profile"])
         container = QLineEdit(toolTip=BROWSER_TIPS["container"])
         keyring = QComboBox(toolTip=BROWSER_TIPS["keyring"])
@@ -376,15 +395,15 @@ class PrefsDialog(QDialog):
             if not check.isChecked():
                 return ""
             has_keyring, has_container = applies()  # a disabled field is left out
-            return yc.join_cookie_spec(browser.currentText(),
+            return join_cookie_spec(browser.currentText(),
                                        keyring.currentText() if has_keyring else "",
                                        profile.text().strip(),
                                        container.text().strip() if has_container else "")
 
-        def set_(line: yc.Option | None) -> None:
+        def set_(line: Option | None) -> None:
             check.setChecked(line is not None)
             if line:
-                name, ring, prof, cont = yc.split_cookie_spec(_value(line))
+                name, ring, prof, cont = split_cookie_spec(_value(line))
                 browser.setCurrentIndex(max(browser.findText(name), 0))
                 keyring.setCurrentIndex(max(keyring.findText(ring), 0))
                 profile.setText(prof)
@@ -414,11 +433,11 @@ class PrefsDialog(QDialog):
 
         def get() -> str:
             checked = self.cookies_check.isChecked()
-            return yc.to_config_path(self.cookies_edit.text().strip()) if checked else ""
+            return to_config_path(self.cookies_edit.text().strip()) if checked else ""
 
-        def set_(line: yc.Option | None) -> None:
+        def set_(line: Option | None) -> None:
             self.cookies_check.setChecked(line is not None)
-            self.cookies_edit.setText(yc.to_display_path(_value(line)))
+            self.cookies_edit.setText(to_display_path(_value(line)))
 
         return _Field(_row(self.cookies_check, path_row, stretch=1), get, set_)
 
@@ -444,17 +463,17 @@ class PrefsDialog(QDialog):
         """Write the changed yt-dlp options, if any; False if the dialog should stay open."""
         changed = {name: value for name, field in self.fields.items()
                    if (value := field.get()) != self.baseline[name]}
-        if self.readonly or not changed:
+        if self.readonly or self.config is None or not changed:
             return True
         lines = self.config.lines
         for name, value in changed.items():
-            lines = yc.set_option(lines, name, value)
+            lines = set_option(lines, name, value)
         try:
-            yc.write_config(self.config, lines)
+            write_config(self.config, lines)
         except UnicodeEncodeError:
             error = (f"A value can't be saved in this file's encoding ({self.config.encoding}). "
                      "Nothing was saved.")
-        except yc.ConfigChanged:
+        except ConfigChanged:
             error = ("The config file changed after Preferences opened, so Yoink didn't save "
                      "over it. Close Preferences and open it again.")
         except OSError as e:

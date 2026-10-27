@@ -35,9 +35,9 @@ _UPDATE_COMMANDS = {
 }
 
 
-def install_method(path: Path, variant: str) -> str:
+def install_method(path: Path | None, variant: str) -> str:
     """The variant yt-dlp reports, narrowed down for "pip"; "unknown" if it reported none."""
-    if variant != "pip":
+    if variant != "pip" or path is None:
         return variant or "unknown"
     resolved = path.resolve().as_posix()
     return next((method for part, method in _PIP_METHODS if part in resolved), "pip")

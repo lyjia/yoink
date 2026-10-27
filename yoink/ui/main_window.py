@@ -225,7 +225,8 @@ class MainWindow(QMainWindow):
         self._overrides_changed()
         self._set_conflicts(ytdlp_config.find_conflicts(self.loaded_configs or []))
 
-        self.variant = ver[1] if (ver := ytdlp_config.parse_version(text)) else ""
+        ver = ytdlp_config.parse_version(text)
+        self.variant = ver[1] if ver else ""
         if ver:
             status = f"yt-dlp {ver[0]} ({binary.install_method(self.binary_path, ver[1])})"
         else:
@@ -251,6 +252,7 @@ class MainWindow(QMainWindow):
     def show_prefs(self) -> None:
         dialog = PrefsDialog(self.settings, self.loaded_configs, self.binary_path, self.variant, self)
         dialog.exec()
+        dialog.deleteLater()
         if dialog.binary_changed:
             self.binary_path = binary.find_binary(self.settings.value(app.KEY_BINARY_PATH))
         if dialog.binary_changed or dialog.config_written or dialog.updated:
