@@ -66,6 +66,7 @@ def _opt_float(s: str) -> float | None:
 class DownloadJob(QObject):
     state_changed = Signal(object)  # JobState
     file_named = Signal(str)  # filename as yt-dlp will write it
+    metadata = Signal(list)  # the META fields (see argv.py), "" where yt-dlp has none
     progress = Signal(object)  # Progress
     postprocessing = Signal(str)  # postprocessor name
     done = Signal(str)  # final file path
@@ -146,6 +147,8 @@ class DownloadJob(QObject):
         try:
             if kind == "FILE":
                 self.file_named.emit(fields[2])
+            elif kind == "META":
+                self.metadata.emit(["" if f == "NA" else f for f in fields[2:]])
             elif kind == "DL":
                 self._handle_dl(fields)
             elif kind == "PP":

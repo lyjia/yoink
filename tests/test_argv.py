@@ -33,6 +33,10 @@ def test_quiet_kept():
     assert "--quiet" in build_argv(URL)
 
 
+def test_meta_printed_before_download():
+    assert any(a.startswith("before_dl:YOINK\tMETA\t") for a in build_argv(URL))
+
+
 @pytest.mark.parametrize("url", [URL, "-P/etc", "--exec=rm -rf ~"])
 def test_url_last_after_separator(url):
     args = build_argv(url, "/tmp/out", "chrome")

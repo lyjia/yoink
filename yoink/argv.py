@@ -34,6 +34,17 @@ _PP_TEMPLATE = "\t".join(
     ]
 )
 _PRINT_FILE = f"before_dl:{TOKEN}\tFILE\t%(filename)s"
+_PRINT_META = "\t".join(
+    [
+        f"before_dl:{TOKEN}",
+        "META",
+        "%(title)s",
+        "%(uploader)s",
+        "%(duration_string)s",
+        "%(resolution)s",
+        "%(upload_date>%Y-%m-%d)s",
+    ]
+)
 _PRINT_DONE = f"after_move:{TOKEN}\tDONE\t%(filepath)s"
 
 
@@ -69,6 +80,7 @@ def build_argv(url: str, directory: str | None = None, cookies: str | None = Non
         "--progress-template", _DL_TEMPLATE,
         "--progress-template", _PP_TEMPLATE,
         "--print", _PRINT_FILE,
+        "--print", _PRINT_META,
         "--print", _PRINT_DONE,
         "--",
         url,

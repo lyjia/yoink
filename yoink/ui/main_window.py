@@ -41,10 +41,11 @@ log = logging.getLogger(__name__)
 
 # Qt restores a saved header by column index: rename app.KEY_HEADER if these change.
 COLUMNS = ["", "Status", "Scheme", "Host", "Path", "Filename", "Downloaded", "Total", "Speed",
-           "Progress", ""]
+           "Progress", "Title", "Uploader", "Duration", "Resolution", "Upload date", ""]
 (C_ICON, C_STATUS, C_SCHEME, C_HOST, C_PATH, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG,
- C_ACTION) = range(len(COLUMNS))
-HIDDEN = (C_SCHEME,)  # until shown from the View menu
+ C_TITLE, C_UPLOADER, C_DURATION, C_RES, C_DATE, C_ACTION) = range(len(COLUMNS))
+META_COLUMNS = range(C_TITLE, C_ACTION)  # in the order of the META fields
+HIDDEN = (C_SCHEME, *META_COLUMNS)  # until shown from the View menu
 SP = QStyle.StandardPixmap
 STATE_ICONS = {
     JobState.QUEUED: SP.SP_BrowserReload,
@@ -162,8 +163,8 @@ class MainWindow(QMainWindow):
         self.table.setWordWrap(False)  # elide text that doesn't fit
         # Default widths: the header text, or room for the usual contents.
         self.table.resizeColumnsToContents()
-        for col, width in {C_ICON: 28, C_STATUS: 80, C_SCHEME: 50, C_HOST: 100, C_PATH: 180,
-                           C_FILE: 180, C_TOTAL: 70, C_SPEED: 80, C_PROG: 100,
+        for col, width in {C_ICON: 28, C_STATUS: 80, C_HOST: 100, C_PATH: 180,
+                           C_FILE: 180, C_TOTAL: 70, C_SPEED: 80, C_PROG: 100, C_TITLE: 180,
                            C_ACTION: 66}.items():
             self.table.setColumnWidth(col, width)
         for col in HIDDEN:
@@ -373,6 +374,7 @@ class MainWindow(QMainWindow):
         self._add_row(job)
         job.state_changed.connect(lambda s, j=job: self._on_state(j, s))
         job.file_named.connect(lambda f, j=job: self._set(j, C_FILE, os.path.basename(f)))
+        job.metadata.connect(lambda fields, j=job: self._on_metadata(j, fields))
         job.progress.connect(lambda p, j=job: self._on_progress(j, p))
         job.postprocessing.connect(lambda name, j=job: self._set(j, C_SPEED, name))
         job.done.connect(lambda path, j=job: self._set(j, C_FILE, os.path.basename(path)))
@@ -437,6 +439,11 @@ class MainWindow(QMainWindow):
         self._set(job, C_STATUS, state.value)
         icon = self.style().standardIcon(STATE_ICONS[state])
         self.table.item(self._row(job), C_ICON).setIcon(icon)
+
+    def _on_metadata(self, job: DownloadJob, fields: list[str]) -> None:
+        row = self._row(job)
+        for col, text in zip(META_COLUMNS, fields):
+            self.table.item(row, col).setText(text)
 
     def _on_progress(self, job: DownloadJob, p: Progress) -> None:
         row = self._row(job)
