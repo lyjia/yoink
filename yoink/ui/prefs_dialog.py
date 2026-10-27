@@ -57,6 +57,8 @@ TITLE = "Preferences"
 BINARY_TIP = "The yt-dlp program that Yoink runs. Leave empty to use the one Yoink finds on its own."
 UPDATE_TIP = "Updates the yt-dlp program that Yoink is using, or shows how to update it."
 UPDATE_TITLE = "Update yt-dlp"
+RESET_TIP = ("Puts the download table's columns back to their default widths and order, "
+             "and shows all of them.")
 # What Update says for a build that yt-dlp can't update itself (3.3).
 DIR_BUILD = ("This copy of yt-dlp can't update itself. To update it, download the latest "
              "release from github.com/yt-dlp/yt-dlp and replace the folder it came in.")
@@ -167,7 +169,7 @@ def _row(*widgets: QWidget, stretch: int | None = 0) -> QWidget:
 
 class PrefsDialog(QDialog):
     """Save writes what changed. The caller then reads `binary_changed` and
-    `config_written`, and `updated`, which Cancel does not reset."""
+    `config_written`, and `updated` and `table_reset`, which Cancel does not reset."""
 
     def __init__(self, settings: QSettings, loaded: list[LoadedConfig] | None,
                  binary_path: Path | None, variant: str, parent: QWidget | None = None) -> None:
@@ -175,7 +177,7 @@ class PrefsDialog(QDialog):
         self.setWindowTitle(TITLE)
         self.settings = settings
         self.binary_path, self.variant = binary_path, variant  # the binary in use
-        self.binary_changed = self.config_written = self.updated = False
+        self.binary_changed = self.config_written = self.updated = self.table_reset = False
 
         self.page_list = QListWidget()
         self.page_list.setFixedWidth(120)
@@ -234,6 +236,10 @@ class PrefsDialog(QDialog):
         row = _row(self._browse_row(self.binary_edit), update)
         form.addRow("yt-dlp program:", row)
         form.labelForField(row).setToolTip(BINARY_TIP)
+        reset = QPushButton("Reset table layout", toolTip=RESET_TIP)
+        reset.clicked.connect(lambda: setattr(self, "table_reset", True))
+        reset.clicked.connect(lambda: reset.setEnabled(False))  # applies when the dialog closes
+        form.addRow("", _row(reset, stretch=None))
         return page
 
     def _update(self) -> None:

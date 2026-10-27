@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse
 
-from PySide6.QtCore import QProcess, Qt, QTimer, QUrl
+from PySide6.QtCore import QByteArray, QProcess, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -39,6 +39,7 @@ from yoink.ui.prefs_dialog import PrefsDialog, _row as side_by_side
 
 log = logging.getLogger(__name__)
 
+# Qt restores a saved header by column index: rename app.KEY_HEADER if these change.
 COLUMNS = ["", "Status", "URL", "Host", "Filename", "Downloaded", "Total", "Speed", "Progress", ""]
 (C_ICON, C_STATUS, C_URL, C_HOST, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG,
  C_ACTION) = range(len(COLUMNS))
@@ -172,6 +173,13 @@ class MainWindow(QMainWindow):
         self.prefs_action = file_menu.addAction("Preferences…", self.show_prefs)
         file_menu.addSeparator()
         file_menu.addAction("E&xit", self.close)
+        view_menu = self.menuBar().addMenu("&View")
+        self.column_actions = []  # checked shows the column; the action column always shows
+        for col, name in enumerate(COLUMNS[:C_ACTION]):
+            action = view_menu.addAction(name or "Status icon")
+            action.setCheckable(True)
+            action.toggled.connect(lambda on, c=col: hdr.setSectionHidden(c, not on))
+            self.column_actions.append(action)
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction("About", self._about)
 
@@ -197,6 +205,16 @@ class MainWindow(QMainWindow):
         # An unknown value (say, a browser dropped from the list) follows the config.
         i = self.cookies_combo.findData(self.settings.value(app.KEY_COOKIES, ""))
         self.cookies_combo.setCurrentIndex(max(i, 0))
+        self._set_header(self.settings.value(app.KEY_HEADER))
+
+    def _set_header(self, state: QByteArray | None) -> None:
+        """Restore the table columns from `state`, or the defaults if it doesn't fit."""
+        hdr = self.table.horizontalHeader()
+        # A state saved with other columns may restore "fine" yet keep its column count.
+        if not (state and hdr.restoreState(state) and hdr.count() == len(COLUMNS)):
+            hdr.restoreState(self._default_header)
+        for col, action in enumerate(self.column_actions):
+            action.setChecked(not hdr.isSectionHidden(col))
 
     # ---- config probe -----------------------------------------------------
 
@@ -282,6 +300,8 @@ class MainWindow(QMainWindow):
             self.binary_path = binary.find_binary(self.settings.value(app.KEY_BINARY_PATH))
         if dialog.binary_changed or dialog.config_written or dialog.updated:
             self.refresh_config()
+        if dialog.table_reset:
+            self._set_header(self._default_header)
 
     # ---- overrides --------------------------------------------------------
 
@@ -448,6 +468,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue(app.KEY_GEOMETRY, self.saveGeometry())
         self.settings.setValue(app.KEY_DIR, self.dir_edit.text().strip())
         self.settings.setValue(app.KEY_COOKIES, self.cookies_combo.currentData())
+        self.settings.setValue(app.KEY_HEADER, self.table.horizontalHeader().saveState())
         if proc := self._probe:
             self._probe = None  # so _probe_done ignores it
             proc.kill()

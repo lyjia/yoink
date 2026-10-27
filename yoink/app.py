@@ -15,6 +15,7 @@ APP_TITLE = "Yoink!"
 KEY_DIR = "main/dir"  # override path; empty follows the config
 KEY_COOKIES = "main/cookies"  # empty follows the config, "none", or a browser
 KEY_GEOMETRY = "main/geometry"
+KEY_HEADER = "main/header"  # download table columns: widths, order, hidden
 KEY_BINARY_PATH = "ytdlp/binary_path"
 _KEY_LAST_DIR = "main/last_dir"  # Phase 0's name for KEY_DIR
 
