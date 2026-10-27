@@ -35,8 +35,19 @@ from yoink.ui.prefs_dialog import PrefsDialog
 
 log = logging.getLogger(__name__)
 
-COLUMNS = ["Status", "URL", "Host", "Filename", "Downloaded", "Total", "Speed", "Progress", ""]
-(C_STATUS, C_URL, C_HOST, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG, C_CANCEL) = range(len(COLUMNS))
+COLUMNS = ["", "Status", "URL", "Host", "Filename", "Downloaded", "Total", "Speed", "Progress", ""]
+(C_ICON, C_STATUS, C_URL, C_HOST, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG,
+ C_CANCEL) = range(len(COLUMNS))
+SP = QStyle.StandardPixmap
+STATE_ICONS = {
+    JobState.QUEUED: SP.SP_BrowserReload,
+    JobState.STARTING: SP.SP_BrowserReload,
+    JobState.DOWNLOADING: SP.SP_ArrowDown,
+    JobState.POSTPROCESSING: SP.SP_FileDialogContentsView,
+    JobState.FINISHED: SP.SP_DialogApplyButton,
+    JobState.FAILED: SP.SP_MessageBoxCritical,
+    JobState.CANCELLED: SP.SP_DialogCancelButton,
+}
 
 # Known cookie extraction pitfalls (docs/DESIGN.md section 4).
 PITFALLS = {
@@ -154,7 +165,7 @@ class MainWindow(QMainWindow):
 
         # Override indicator (docs/PHASE1.md 1.3), left of the version.
         self.notice_icon = QLabel()
-        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+        icon = self.style().standardIcon(SP.SP_MessageBoxWarning)
         self.notice_icon.setPixmap(icon.pixmap(16, 16))
         self.notice_link = QLabel('<a href="#">Some configuration values overridden</a>')
         self.notice_link.setToolTip("Show which yt-dlp config files set the same option")
@@ -354,7 +365,7 @@ class MainWindow(QMainWindow):
         self.jobs.append(job)
         for col in range(len(COLUMNS)):
             self.table.setItem(row, col, QTableWidgetItem(""))
-        self.table.item(row, C_STATUS).setText(job.state.value)
+        self._on_state(job, job.state)
         self.table.item(row, C_URL).setText(job.url)
         self.table.item(row, C_URL).setToolTip(job.url)
         self.table.item(row, C_HOST).setText(urlparse(job.url).netloc)
@@ -376,6 +387,8 @@ class MainWindow(QMainWindow):
 
     def _on_state(self, job: DownloadJob, state: JobState) -> None:
         self._set(job, C_STATUS, state.value)
+        icon = self.style().standardIcon(STATE_ICONS[state])
+        self.table.item(self._row(job), C_ICON).setIcon(icon)
 
     def _on_progress(self, job: DownloadJob, p: Progress) -> None:
         row = self._row(job)
