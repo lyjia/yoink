@@ -3,11 +3,13 @@
 import logging
 import os
 import re
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse
 
-from PySide6.QtCore import QProcess, Qt, QTimer
+from PySide6.QtCore import QProcess, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -18,12 +20,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QStyle,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -31,13 +35,13 @@ from PySide6.QtWidgets import (
 from yoink import __version__, app, argv, binary, ytdlp_config
 from yoink.job import DownloadJob, JobState, Progress
 from yoink.ui.config_notice import ConfigNoticeDialog
-from yoink.ui.prefs_dialog import PrefsDialog
+from yoink.ui.prefs_dialog import PrefsDialog, _row as side_by_side
 
 log = logging.getLogger(__name__)
 
 COLUMNS = ["", "Status", "URL", "Host", "Filename", "Downloaded", "Total", "Speed", "Progress", ""]
 (C_ICON, C_STATUS, C_URL, C_HOST, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG,
- C_CANCEL) = range(len(COLUMNS))
+ C_ACTION) = range(len(COLUMNS))
 SP = QStyle.StandardPixmap
 STATE_ICONS = {
     JobState.QUEUED: SP.SP_BrowserReload,
@@ -72,6 +76,10 @@ def format_bytes(n: float | None) -> str:
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024
     return f"{n:.1f} TB"
+
+
+def open_path(path: str) -> None:
+    QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
 
 class MainWindow(QMainWindow):
@@ -344,10 +352,8 @@ class MainWindow(QMainWindow):
         self.url_edit.clear()
 
     def clear_finished(self) -> None:
-        for row in range(len(self.jobs) - 1, -1, -1):
-            if self.jobs[row].state.terminal:
-                self.table.removeRow(row)
-                del self.jobs[row]
+        for job in [j for j in self.jobs if j.state.terminal]:
+            self._remove(job)
 
     def _about(self) -> None:
         QMessageBox.about(
@@ -375,9 +381,20 @@ class MainWindow(QMainWindow):
         bar.setTextVisible(True)
         self.table.setCellWidget(row, C_PROG, bar)
 
-        cancel = QPushButton("Cancel")
-        cancel.clicked.connect(job.cancel)
-        self.table.setCellWidget(row, C_CANCEL, cancel)
+        cancel = self._tool_button(SP.SP_BrowserStop, "Cancel", job.cancel)
+        self.table.setCellWidget(row, C_ACTION, side_by_side(cancel, stretch=None))
+
+    def _tool_button(self, icon: QStyle.StandardPixmap, tip: str, slot: Callable) -> QToolButton:
+        button = QToolButton()
+        button.setIcon(self.style().standardIcon(icon))
+        button.setToolTip(tip)
+        button.setAutoRaise(True)
+        button.clicked.connect(slot)
+        return button
+
+    def _remove(self, job: DownloadJob) -> None:
+        self.table.removeRow(self._row(job))
+        self.jobs.remove(job)
 
     def _row(self, job: DownloadJob) -> int:
         return self.jobs.index(job)
@@ -409,7 +426,17 @@ class MainWindow(QMainWindow):
         if job.state is JobState.FAILED:
             self.table.item(row, C_FILE).setText(job.error_text)
             self.table.item(row, C_FILE).setToolTip("\n".join(job.log[-20:]))
-        self.table.cellWidget(row, C_CANCEL).setEnabled(False)
+        # Clear, and Open once there is a file to open.
+        clear = self._tool_button(SP.SP_TrashIcon, "Remove from list", lambda: self._remove(job))
+        buttons = [clear]
+        if job.state is JobState.FINISHED and (path := job.final_path):
+            open_ = self._tool_button(SP.SP_DialogOpenButton, "Open", lambda: open_path(path))
+            open_.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+            menu = QMenu(open_)
+            menu.addAction("Open folder", lambda: open_path(os.path.dirname(path)))
+            open_.setMenu(menu)
+            buttons.append(open_)
+        self.table.setCellWidget(row, C_ACTION, side_by_side(*buttons, stretch=None))
 
     # ---- lifecycle --------------------------------------------------------
 
