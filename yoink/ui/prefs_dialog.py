@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStackedWidget,
     QStyle,
+    QStyleFactory,
     QVBoxLayout,
     QWidget,
 )
@@ -57,6 +58,7 @@ TITLE = "Preferences"
 BINARY_TIP = "The yt-dlp program that Yoink runs. Leave empty to use the one Yoink finds on its own."
 UPDATE_TIP = "Updates the yt-dlp program that Yoink is using, or shows how to update it."
 UPDATE_TITLE = "Update yt-dlp"
+STYLE_TIP = "How windows, buttons, and lists are drawn. System default matches the rest of your computer."
 RESET_TIP = "Puts the download table's columns back to their default widths, order, and visibility."
 # What Update says for a build that yt-dlp can't update itself (3.3).
 DIR_BUILD = ("This copy of yt-dlp can't update itself. To update it, download the latest "
@@ -235,6 +237,15 @@ class PrefsDialog(QDialog):
         row = side_by_side(self._browse_row(self.binary_edit), update)
         form.addRow("yt-dlp program:", row)
         form.labelForField(row).setToolTip(BINARY_TIP)
+        self.style_setting = self.settings.value(app.KEY_STYLE, "")
+        self.style_combo = QComboBox(toolTip=STYLE_TIP)
+        self.style_combo.addItem("System default", "")
+        for name in QStyleFactory.keys():
+            self.style_combo.addItem(name, name)
+        self.style_combo.setCurrentIndex(max(self.style_combo.findData(self.style_setting), 0))
+        row = side_by_side(self.style_combo, stretch=None)
+        form.addRow("Theme:", row)
+        form.labelForField(row).setToolTip(STYLE_TIP)
         reset = QPushButton("Reset table layout", toolTip=RESET_TIP)
         reset.clicked.connect(lambda: setattr(self, "table_reset", True))
         reset.clicked.connect(lambda: reset.setEnabled(False))  # applies when the dialog closes
@@ -467,6 +478,9 @@ class PrefsDialog(QDialog):
         if binary_path != self.binary_setting:
             self.settings.setValue(app.KEY_BINARY_PATH, binary_path)
             self.binary_changed = True
+        if (style := self.style_combo.currentData()) != self.style_setting:
+            self.settings.setValue(app.KEY_STYLE, style)
+            app.apply_style(style)
         super().accept()
 
     def _save_config(self) -> bool:

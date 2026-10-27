@@ -11,6 +11,7 @@ def main() -> int:
     qapp = QApplication(sys.argv)
     qapp.setOrganizationName(app.ORG_NAME)
     qapp.setApplicationName(app.APP_NAME)
+    app.apply_style(str(app.settings().value(app.KEY_STYLE, "")))
     win = MainWindow()
     win.show()
     return qapp.exec()
