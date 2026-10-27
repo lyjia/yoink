@@ -391,12 +391,9 @@ class MainWindow(QMainWindow):
 
     def _on_finished(self, job: DownloadJob) -> None:
         row = self._row(job)
-        bar: QProgressBar = self.table.cellWidget(row, C_PROG)
-        bar.setRange(0, 100)
+        self.table.removeCellWidget(row, C_PROG)
         self.table.item(row, C_SPEED).setText("")
-        if job.state is JobState.FINISHED:
-            bar.setValue(100)
-        elif job.state is JobState.FAILED:
+        if job.state is JobState.FAILED:
             self.table.item(row, C_FILE).setText(job.error_text)
             self.table.item(row, C_FILE).setToolTip("\n".join(job.log[-20:]))
         self.table.cellWidget(row, C_CANCEL).setEnabled(False)
