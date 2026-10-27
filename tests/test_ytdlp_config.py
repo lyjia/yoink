@@ -1,6 +1,7 @@
 import codecs
 import locale
 import os
+from datetime import date
 
 import pytest
 
@@ -19,6 +20,7 @@ from yoink.ytdlp_config import (
     config_values,
     find_conflicts,
     format_lines,
+    is_stale,
     join_cookie_spec,
     matches_probe,
     owned_lines,
@@ -188,6 +190,23 @@ def test_parse_version(line, expected):
 @pytest.mark.parametrize("text", ["", CMDLINE, "yt-dlp 2026.10.21\n", SAMPLE])
 def test_parse_version_missing(text):
     assert parse_version(text) is None
+
+
+@pytest.mark.parametrize(("label", "stale"), [
+    ("stable@2026.01.11 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", False),  # 89 days old
+    ("stable@2026.01.09 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", True),  # 91 days old
+    ("nightly@2026.01.09.233505 from yt-dlp/yt-dlp-nightly-builds [0123abcde] (zip)", True),
+    ("yt-dlp/yt-dlp@stable build 2026.01.09 [0123abcde] (pip)", True),
+    ("someone/yt-dlp-fork@2026.01.09 [0123abcde] (source)", False),  # not an official build
+    ("stable@unknown from yt-dlp/yt-dlp (pip)", False),
+])
+def test_is_stale(label, stale):
+    probe = f"{CMDLINE}[debug] yt-dlp version {label}\n"
+    assert is_stale(probe, date(2026, 4, 10)) is stale
+
+
+def test_is_stale_without_header():
+    assert is_stale(SAMPLE, date(2026, 4, 10)) is False
 
 
 @pytest.mark.parametrize(("loaded", "expected"), [

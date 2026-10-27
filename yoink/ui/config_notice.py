@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from yoink.ytdlp_config import LoadedConfig, Occurrence
+from yoink.ytdlp_config import DIRECTORY, LoadedConfig, Occurrence, to_display_path
 
 COLUMNS = ["Setting", "Value", "File", "Loaded as"]
 STDIN = "(standard input)"
@@ -40,7 +40,8 @@ class ConfigNoticeDialog(QDialog):
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         for row, o in enumerate(conflicts):
-            for col, text in enumerate((o.setting, o.value, o.path or STDIN, o.label)):
+            value = to_display_path(o.value) if o.setting == DIRECTORY else o.value
+            for col, text in enumerate((o.setting, value, o.path or STDIN, o.label)):
                 item = QTableWidgetItem(text)
                 item.setToolTip(text)
                 self.table.setItem(row, col, item)

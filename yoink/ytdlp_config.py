@@ -19,6 +19,7 @@ import shlex
 import shutil
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
@@ -103,15 +104,36 @@ def parse_probe(text: str) -> list[LoadedConfig] | None:
 # <version>"; then "[<git head>]" and "(<variant>)", each optional. A variant
 # set by a repackager ends in "*"; an unknown one is left out.
 _VERSION = re.compile(
-    r"^\[debug\] yt-dlp version (?P<label>\S+)(?: from \S+| build (?P<build>\S+))?"
+    r"^\[debug\] yt-dlp version (?P<label>\S+)(?: from (?P<origin>\S+)| build (?P<build>\S+))?"
     r"(?: \[[^\]]*\])?(?: \((?P<variant>[^)]*)\))?", re.M)
+
+
+def _header(text: str) -> tuple[str, str, str] | None:
+    """(origin, version, variant) from the probe's debug header."""
+    if not (m := _VERSION.search(text)):
+        return None
+    origin, _, tag = m["label"].rpartition("@")
+    return m["origin"] or origin, m["build"] or tag, m["variant"] or ""
 
 
 def parse_version(text: str) -> tuple[str, str] | None:
     """(version, variant) from the probe's debug header; variant may be ""."""
-    if not (m := _VERSION.search(text)):
-        return None
-    return m["build"] or m["label"].rpartition("@")[2], m["variant"] or ""
+    header = _header(text)
+    return header and header[1:]
+
+
+def is_stale(text: str, today: date) -> bool:
+    """yt-dlp's own rule: an official build whose version date is over 90 days old.
+
+    yt-dlp never prints this warning itself because the probe passes --no-update.
+    """
+    if not (header := _header(text)) or not header[0].startswith("yt-dlp/"):
+        return False
+    try:
+        built = date(*map(int, header[1].split(".")[:3]))
+    except (TypeError, ValueError):  # not a dated version
+        return False
+    return built < today - timedelta(days=90)
 
 
 # `--paths [TYPES:]PATH`, as split by yt-dlp's _dict_from_options_callback.

@@ -5,6 +5,8 @@ command line left to right, so anything Yoink must control goes last.
 See docs/DESIGN.md sections 2.2 and 2.3.
 """
 
+import os
+
 from PySide6.QtCore import QStandardPaths
 
 # Every protocol line Yoink emits through yt-dlp starts with this token
@@ -36,7 +38,9 @@ _PRINT_DONE = f"after_move:{TOKEN}\tDONE\t%(filepath)s"
 
 
 def default_download_dir() -> str:
-    return QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
+    # Native separators: Qt returns forward slashes on Windows.
+    return os.path.normpath(
+        QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation))
 
 
 def build_argv(url: str, directory: str | None = None, cookies: str | None = None) -> list[str]:

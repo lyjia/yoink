@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -44,6 +45,10 @@ PITFALLS = {
     "safari": "Safari on macOS needs Full Disk Access.",
 }
 FOLLOWING = "Following the yt-dlp config."
+STALE_TIP = (
+    "This copy of yt-dlp is more than 90 days old. Sites change often, so an old copy is the "
+    "usual reason downloads or cookies stop working. Update it from File > Preferences."
+)
 # The macOS single-file build takes ~6.5 s to start; a quarantined one may hang.
 PROBE_TIMEOUT_MS = 20_000
 
@@ -210,17 +215,21 @@ class MainWindow(QMainWindow):
         d = self.config_defaults = ytdlp_config.config_defaults(self.loaded_configs)
         self._set_config_cookies(d.cookies)
         fallback = "Set by yt-dlp config" if d.sets_directory else argv.default_download_dir()
-        self.dir_edit.setPlaceholderText(d.directory or fallback)
+        self.dir_edit.setPlaceholderText(ytdlp_config.to_display_path(d.directory) or fallback)
         self._overrides_changed()
         self._set_conflicts(ytdlp_config.find_conflicts(self.loaded_configs or []))
 
         if ver := ytdlp_config.parse_version(text):
-            status = f"yt-dlp {ver[0]} ({ver[1]})" if ver[1] else f"yt-dlp {ver[0]}"
+            status = f"yt-dlp {ver[0]} ({binary.install_method(self.binary_path, ver[1])})"
         else:
             status = "yt-dlp unknown version"
+        tip = str(self.binary_path)
+        if ytdlp_config.is_stale(text, date.today()):
+            status, tip = f"{status}, over 90 days old", f"{STALE_TIP}\n\n{tip}"
         if self.loaded_configs is None:
             status = f"{status}, config: unknown" if ver else "yt-dlp config: unknown"
         self.status_label.setText(status)
+        self.status_label.setToolTip(tip)
 
     def _set_conflicts(self, conflicts: list[ytdlp_config.Occurrence]) -> None:
         self.conflicts = conflicts
@@ -275,7 +284,7 @@ class MainWindow(QMainWindow):
         start = next((d for d in candidates if os.path.isdir(d)), argv.default_download_dir())
         chosen = QFileDialog.getExistingDirectory(self, "Download directory", start)
         if chosen:
-            self.dir_edit.setText(chosen)
+            self.dir_edit.setText(os.path.normpath(chosen))
 
     def start_download(self) -> None:
         url = self.url_edit.text().strip()
