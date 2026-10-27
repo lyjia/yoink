@@ -310,3 +310,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+
+# Yoink settings for the "Yoink (sandbox settings)" VS Code launch config
+/.sandbox-settings/

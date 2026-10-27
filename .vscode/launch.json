@@ -9,6 +9,28 @@
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": true
+        },
+        {
+            "name": "Yoink (sandbox settings)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "yoink",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "YOINK_SETTINGS_DIR": "${workspaceFolder}/.sandbox-settings"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Tests (debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["tests"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false
         }
     ]
 }

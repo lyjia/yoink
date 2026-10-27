@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
-from yoink.argv import TOKEN
+from yoink.argv import TOKEN, default_download_dir
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +84,9 @@ class DownloadJob(QObject):
         self._cancel_requested = False
 
         self._proc = QProcess(self)
+        # A config with only `-P temp:...` would otherwise download into
+        # whatever directory Yoink was launched from.
+        self._proc.setWorkingDirectory(default_download_dir())
         self._proc.readyReadStandardOutput.connect(self._read_stdout)
         self._proc.readyReadStandardError.connect(self._read_stderr)
         self._proc.finished.connect(self._on_finished)
