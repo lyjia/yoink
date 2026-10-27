@@ -154,11 +154,15 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(C_URL, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(C_FILE, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(C_PROG, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(C_PROG, 140)
+        hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionsMovable(True)
+        self.table.setWordWrap(False)  # elide text that doesn't fit
+        # Default widths: the header text, or room for the usual contents.
+        self.table.resizeColumnsToContents()
+        for col, width in {C_ICON: 28, C_STATUS: 80, C_URL: 180, C_HOST: 100, C_FILE: 180,
+                           C_TOTAL: 70, C_SPEED: 80, C_PROG: 100, C_ACTION: 66}.items():
+            self.table.setColumnWidth(col, width)
+        self._default_header = hdr.saveState()
         root.addWidget(self.table, 1)
 
         file_menu = self.menuBar().addMenu("&File")
