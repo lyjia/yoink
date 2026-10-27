@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from yoink import __version__, app, argv, binary, ytdlp_config
 from yoink.job import DownloadJob, JobState, Progress
 from yoink.ui.config_notice import ConfigNoticeDialog
+from yoink.ui.prefs_dialog import PrefsDialog
 
 log = logging.getLogger(__name__)
 
@@ -143,6 +144,8 @@ class MainWindow(QMainWindow):
         file_menu.addAction("Clear finished", self.clear_finished)
         file_menu.addAction("Refresh config", self.refresh_config)
         file_menu.addSeparator()
+        self.prefs_action = file_menu.addAction("Preferences…", self.show_prefs)
+        file_menu.addSeparator()
         file_menu.addAction("E&xit", self.close)
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction("About", self._about)
@@ -182,7 +185,9 @@ class MainWindow(QMainWindow):
         self.status_label.setToolTip(str(self.binary_path))
         # Until the probe says whether the config sets a home path, an empty
         # directory field can't tell "pass no -P" from "pass Downloads".
+        # Preferences, too, needs the finished result.
         self.start_btn.setEnabled(False)
+        self.prefs_action.setEnabled(False)
         self.start_btn.setToolTip("Waiting for yt-dlp to report its config")
         if self._probe:  # superseded; _probe_done ignores its result
             self._probe.kill()
@@ -206,6 +211,7 @@ class MainWindow(QMainWindow):
             return
         self._probe = None
         self.start_btn.setEnabled(True)
+        self.prefs_action.setEnabled(True)
         self.start_btn.setToolTip("")
         text = bytes(proc.readAll()).decode("utf-8", "replace")
         # A killed probe may have listed some config files but not all of them.
@@ -240,6 +246,14 @@ class MainWindow(QMainWindow):
         dialog = ConfigNoticeDialog(self.loaded_configs or [], self.conflicts, self)
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         dialog.open()
+
+    def show_prefs(self) -> None:
+        dialog = PrefsDialog(self.settings, self)
+        if not dialog.exec():
+            return
+        if dialog.binary_changed:
+            self.binary_path = binary.find_binary(self.settings.value(app.KEY_BINARY_PATH))
+            self.refresh_config()
 
     # ---- overrides --------------------------------------------------------
 
