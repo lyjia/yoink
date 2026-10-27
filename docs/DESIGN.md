@@ -48,7 +48,7 @@ yoink/
     log_view.py      per-job raw output viewer
 docs/DESIGN.md
 pyproject.toml
-build/nuitka.sh, build/nuitka.ps1
+scripts/build.sh   Nuitka standalone test build into dist/
 ```
 
 Dependencies: PySide6, requests (binary download only). Python 3.11+.
@@ -700,10 +700,13 @@ The sandbox (`scripts/sandbox.sh`) needs to cover each trigger:
 
 ## 7. Packaging
 
-Nuitka, `--standalone --enable-plugin=pyside6`, optional `--onefile`. The
+Nuitka, `--mode=app-dist --enable-plugin=pyside6` (a standalone folder, or a
+`.app` bundle on macOS), optionally `--mode=onefile`. The
 yt-dlp binary is not bundled; it is fetched on first run or found on PATH.
-Build scripts for Linux and Windows live under `build/`. CI builds are
-backlog.
+`scripts/build.sh` (Git Bash on Windows, bash on Linux and macOS) makes a
+standalone test build in `dist/`, which git ignores: `dist/yoink.dist/` on
+Windows and Linux, `dist/yoink.app` on macOS. Release builds and CI builds
+are backlog.
 
 macOS: Yoink.app runs into the same Gatekeeper problem as yt-dlp (6.6). An
 unsigned app downloaded in a browser is blocked until the user clicks
