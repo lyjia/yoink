@@ -57,8 +57,7 @@ TITLE = "Preferences"
 BINARY_TIP = "The yt-dlp program that Yoink runs. Leave empty to use the one Yoink finds on its own."
 UPDATE_TIP = "Updates the yt-dlp program that Yoink is using, or shows how to update it."
 UPDATE_TITLE = "Update yt-dlp"
-RESET_TIP = ("Puts the download table's columns back to their default widths and order, "
-             "and shows all of them.")
+RESET_TIP = "Puts the download table's columns back to their default widths, order, and visibility."
 # What Update says for a build that yt-dlp can't update itself (3.3).
 DIR_BUILD = ("This copy of yt-dlp can't update itself. To update it, download the latest "
              "release from github.com/yt-dlp/yt-dlp and replace the folder it came in.")

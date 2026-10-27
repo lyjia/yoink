@@ -40,9 +40,11 @@ from yoink.ui.prefs_dialog import PrefsDialog, _row as side_by_side
 log = logging.getLogger(__name__)
 
 # Qt restores a saved header by column index: rename app.KEY_HEADER if these change.
-COLUMNS = ["", "Status", "URL", "Host", "Filename", "Downloaded", "Total", "Speed", "Progress", ""]
-(C_ICON, C_STATUS, C_URL, C_HOST, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG,
+COLUMNS = ["", "Status", "Scheme", "Host", "Path", "Filename", "Downloaded", "Total", "Speed",
+           "Progress", ""]
+(C_ICON, C_STATUS, C_SCHEME, C_HOST, C_PATH, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG,
  C_ACTION) = range(len(COLUMNS))
+HIDDEN = (C_SCHEME,)  # until shown from the View menu
 SP = QStyle.StandardPixmap
 STATE_ICONS = {
     JobState.QUEUED: SP.SP_BrowserReload,
@@ -160,9 +162,12 @@ class MainWindow(QMainWindow):
         self.table.setWordWrap(False)  # elide text that doesn't fit
         # Default widths: the header text, or room for the usual contents.
         self.table.resizeColumnsToContents()
-        for col, width in {C_ICON: 28, C_STATUS: 80, C_URL: 180, C_HOST: 100, C_FILE: 180,
-                           C_TOTAL: 70, C_SPEED: 80, C_PROG: 100, C_ACTION: 66}.items():
+        for col, width in {C_ICON: 28, C_STATUS: 80, C_SCHEME: 50, C_HOST: 100, C_PATH: 180,
+                           C_FILE: 180, C_TOTAL: 70, C_SPEED: 80, C_PROG: 100,
+                           C_ACTION: 66}.items():
             self.table.setColumnWidth(col, width)
+        for col in HIDDEN:
+            hdr.setSectionHidden(col, True)
         self._default_header = hdr.saveState()
         root.addWidget(self.table, 1)
 
@@ -396,9 +401,11 @@ class MainWindow(QMainWindow):
         for col in range(len(COLUMNS)):
             self.table.setItem(row, col, QTableWidgetItem(""))
         self._on_state(job, job.state)
-        self.table.item(row, C_URL).setText(job.url)
-        self.table.item(row, C_URL).setToolTip(job.url)
-        self.table.item(row, C_HOST).setText(urlparse(job.url).netloc)
+        url = urlparse(job.url)
+        self.table.item(row, C_SCHEME).setText(url.scheme)
+        self.table.item(row, C_HOST).setText(url.netloc)
+        self.table.item(row, C_PATH).setText(url._replace(scheme="", netloc="").geturl())
+        self.table.item(row, C_PATH).setToolTip(job.url)
 
         bar = QProgressBar()
         bar.setRange(0, 0)  # indeterminate until the first progress line
