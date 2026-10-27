@@ -38,7 +38,6 @@ log = logging.getLogger(__name__)
 COLUMNS = ["Status", "URL", "Host", "Filename", "Downloaded", "Total", "Speed", "Progress", ""]
 (C_STATUS, C_URL, C_HOST, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG, C_CANCEL) = range(len(COLUMNS))
 
-BROWSERS = ["brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale"]
 # Known cookie extraction pitfalls (docs/DESIGN.md section 4).
 PITFALLS = {
     "firefox": "Firefox must be closed, or yt-dlp cannot read its cookies.",
@@ -103,7 +102,7 @@ class MainWindow(QMainWindow):
         self.cookies_combo = QComboBox()
         self.cookies_combo.addItem("", "")  # text set by _set_config_cookies
         self.cookies_combo.addItem("No cookies", "none")
-        for b in BROWSERS:
+        for b in ytdlp_config.BROWSERS:
             self.cookies_combo.addItem(b, b)
         self._set_config_cookies(None)
         self.cookies_combo.currentIndexChanged.connect(self._overrides_changed)
@@ -213,7 +212,7 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(True)
         self.prefs_action.setEnabled(True)
         self.start_btn.setToolTip("")
-        text = bytes(proc.readAll()).decode("utf-8", "replace")
+        text = ytdlp_config.decode_output(bytes(proc.readAll()))
         # A killed probe may have listed some config files but not all of them.
         self.loaded_configs = ytdlp_config.parse_probe(text) if exited else None
         if self.loaded_configs is None:
@@ -248,11 +247,12 @@ class MainWindow(QMainWindow):
         dialog.open()
 
     def show_prefs(self) -> None:
-        dialog = PrefsDialog(self.settings, self)
+        dialog = PrefsDialog(self.settings, self.loaded_configs, self)
         if not dialog.exec():
             return
         if dialog.binary_changed:
             self.binary_path = binary.find_binary(self.settings.value(app.KEY_BINARY_PATH))
+        if dialog.binary_changed or dialog.config_written:
             self.refresh_config()
 
     # ---- overrides --------------------------------------------------------

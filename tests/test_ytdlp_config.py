@@ -18,6 +18,7 @@ from yoink.ytdlp_config import (
     Option,
     config_defaults,
     config_values,
+    decode_output,
     find_conflicts,
     format_lines,
     is_stale,
@@ -361,3 +362,8 @@ def test_paths_windows():
     assert to_display_path("C:/Users/u/Videos") == "C:\\Users\\u\\Videos"
     assert format_lines(set_option([], "--paths", to_config_path("C:\\My Videos"))) \
         == "--paths 'C:/My Videos'\n"
+
+
+@pytest.mark.parametrize("data", ["caf\u00e9\n".encode(), "caf\u00e9\n".encode(locale.getpreferredencoding(False))])
+def test_decode_output(data):
+    assert decode_output(data) == "caf\u00e9\n"

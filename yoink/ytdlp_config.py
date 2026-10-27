@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import shutil
+import sys
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -25,6 +26,7 @@ from typing import NamedTuple
 
 COOKIES = "cookies"
 DIRECTORY = "directory"
+BROWSERS = ["brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale"]
 
 # Run with no URL. --no-cookies-from-browser keeps a config's browser cookie
 # database closed (no Keychain prompt); yt-dlp still lists that config's tokens.
@@ -77,6 +79,14 @@ def _parse_line(head: re.Match, line: str) -> LoadedConfig | None:
         if (tokens := _tokens(rest[end.end():])) is not None:
             return LoadedConfig(label, rest[2:end.start()], tokens, depth)
     return None
+
+
+def decode_output(data: bytes) -> str:
+    """yt-dlp's output: it writes to a pipe in the locale encoding, unless in UTF-8 mode."""
+    try:
+        return data.decode()
+    except UnicodeDecodeError:
+        return data.decode(locale.getpreferredencoding(False), "replace")
 
 
 def parse_probe(text: str) -> list[LoadedConfig] | None:
@@ -145,7 +155,7 @@ _PATH_TYPES = "|".join((
 _TYPED_PATH = re.compile(rf"(?is)(?P<keys>({_PATH_TYPES})(,({_PATH_TYPES}))*):(?P<val>.*)$")
 
 
-def _home_path(value: str) -> str | None:
+def home_path(value: str) -> str | None:
     m = _TYPED_PATH.match(value)
     if not m:
         return value
@@ -161,8 +171,8 @@ class _Option(NamedTuple):
 _OPTIONS = {
     "--cookies-from-browser": _Option(COOKIES, True, str),
     "--no-cookies-from-browser": _Option(COOKIES, False, lambda _: "none"),
-    "-P": _Option(DIRECTORY, True, _home_path),
-    "--paths": _Option(DIRECTORY, True, _home_path),
+    "-P": _Option(DIRECTORY, True, home_path),
+    "--paths": _Option(DIRECTORY, True, home_path),
 }
 SETTINGS = tuple(dict.fromkeys(o.setting for o in _OPTIONS.values()))
 
@@ -355,6 +365,13 @@ class ConfigFile:
     encoding: str
     bom: bytes
     data: bytes | None  # as read; None if the file did not exist
+
+
+def default_config_path() -> Path:
+    """Where Yoink creates the user config if yt-dlp loaded none (DESIGN.md 3.1)."""
+    if sys.platform == "win32":
+        return Path(os.environ["APPDATA"], "yt-dlp", "config")
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config", "yt-dlp", "config")
 
 
 def read_config(path: Path) -> ConfigFile:
