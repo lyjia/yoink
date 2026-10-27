@@ -154,7 +154,7 @@ def _value(line: Option | None) -> str:
     return (line.value or "") if line else ""
 
 
-def _row(*widgets: QWidget, stretch: int | None = 0) -> QWidget:
+def side_by_side(*widgets: QWidget, stretch: int | None = 0) -> QWidget:
     """Widgets side by side; widgets[stretch] takes the spare room, or nothing if None."""
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -219,7 +219,7 @@ class PrefsDialog(QDialog):
 
         button = QPushButton("Browse…")
         button.clicked.connect(browse)
-        return _row(edit, button)
+        return side_by_side(edit, button)
 
     # ---- Yoink page (2.5) -------------------------------------------------
 
@@ -232,13 +232,13 @@ class PrefsDialog(QDialog):
         update.clicked.connect(self._update)
         page = QWidget()
         form = QFormLayout(page)
-        row = _row(self._browse_row(self.binary_edit), update)
+        row = side_by_side(self._browse_row(self.binary_edit), update)
         form.addRow("yt-dlp program:", row)
         form.labelForField(row).setToolTip(BINARY_TIP)
         reset = QPushButton("Reset table layout", toolTip=RESET_TIP)
         reset.clicked.connect(lambda: setattr(self, "table_reset", True))
         reset.clicked.connect(lambda: reset.setEnabled(False))  # applies when the dialog closes
-        form.addRow("", _row(reset, stretch=None))
+        form.addRow("", side_by_side(reset, stretch=None))
         return page
 
     def _update(self) -> None:
@@ -259,7 +259,8 @@ class PrefsDialog(QDialog):
             field = QLineEdit(command, readOnly=True)
             copy = QPushButton("Copy")
             copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(command))
-            self._simple_dialog(QLabel("To update yt-dlp, run this command:"), _row(field, copy))
+            self._simple_dialog(QLabel("To update yt-dlp, run this command:"),
+                                side_by_side(field, copy))
         else:
             QMessageBox.information(self, UPDATE_TITLE,
                                     DIR_BUILD if self.variant.endswith("_dir") else UNKNOWN_BUILD)
@@ -319,7 +320,7 @@ class PrefsDialog(QDialog):
         listing.setHidden(not other)
         warning = QGroupBox("Config file")
         box = QVBoxLayout(warning)
-        box.addWidget(_row(path_label, open_btn))
+        box.addWidget(side_by_side(path_label, open_btn))
         box.addWidget(note)
         box.addWidget(listing)
 
@@ -429,7 +430,7 @@ class PrefsDialog(QDialog):
         row = QWidget()
         layout = QVBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(_row(check, browser, stretch=None))
+        layout.addWidget(side_by_side(check, browser, stretch=None))
         layout.addLayout(sub)
         return _Field(row, get, set_)
 
@@ -448,7 +449,7 @@ class PrefsDialog(QDialog):
             self.cookies_check.setChecked(line is not None)
             self.cookies_edit.setText(to_display_path(_value(line)))
 
-        return _Field(_row(self.cookies_check, path_row, stretch=1), get, set_)
+        return _Field(side_by_side(self.cookies_check, path_row, stretch=1), get, set_)
 
     # ---- saving -----------------------------------------------------------
 

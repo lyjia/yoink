@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 from yoink import __version__, app, argv, binary, ytdlp_config
 from yoink.job import DownloadJob, JobState, Progress
 from yoink.ui.config_notice import ConfigNoticeDialog
-from yoink.ui.prefs_dialog import PrefsDialog, _row as side_by_side
+from yoink.ui.prefs_dialog import PrefsDialog, side_by_side
 
 log = logging.getLogger(__name__)
 
