@@ -231,7 +231,9 @@ class PrefsDialog(QDialog):
         update.clicked.connect(self._update)
         page = QWidget()
         form = QFormLayout(page)
-        form.addRow("yt-dlp program:", _row(self._browse_row(self.binary_edit), update))
+        row = _row(self._browse_row(self.binary_edit), update)
+        form.addRow("yt-dlp program:", row)
+        form.labelForField(row).setToolTip(BINARY_TIP)
         return page
 
     def _update(self) -> None:
@@ -282,6 +284,8 @@ class PrefsDialog(QDialog):
                 groups.addWidget(box)
             form_label, self.fields[name] = self._make_field(kind, label, tip)
             forms[group].addRow(form_label, self.fields[name].row)
+            if form_label:
+                forms[group].labelForField(self.fields[name].row).setToolTip(tip)
         groups.addStretch()
         scroll = QScrollArea(widgetResizable=True)
         scroll.setWidget(content)
@@ -414,9 +418,9 @@ class PrefsDialog(QDialog):
         browser.currentIndexChanged.connect(update)
         sub = QFormLayout()
         sub.setContentsMargins(24, 0, 0, 0)
-        sub.addRow("Profile:", profile)
-        sub.addRow("Container:", container)
-        sub.addRow("Keyring:", keyring)
+        for text, widget in (("Profile:", profile), ("Container:", container), ("Keyring:", keyring)):
+            sub.addRow(text, widget)
+            sub.labelForField(widget).setToolTip(widget.toolTip())
         row = QWidget()
         layout = QVBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)

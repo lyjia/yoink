@@ -101,6 +101,8 @@ class MainWindow(QMainWindow):
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse)
         self.cookies_combo = QComboBox()
+        # The first item's text grows once the probe reports; keep it unclipped.
+        self.cookies_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.cookies_combo.addItem("", "")  # text set by _set_config_cookies
         self.cookies_combo.addItem("No cookies", "none")
         for b in ytdlp_config.BROWSERS:
