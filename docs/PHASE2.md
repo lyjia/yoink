@@ -2,8 +2,84 @@
 
 ## Status
 
-Not started. When the phase is done, this section records the commits, the
-test count, the application size, and any deviations, as in PHASE1.md.
+Implemented on branch `phase-2-preferences` (PR #3). `uv run pytest` passes
+(153 tests, plus 1 skipped on Windows). Application code is about 1960
+lines, comments and blank lines included, against the 1500 estimated in
+section 4. `ytdlp_config.py` is 454 lines, past the 350 at which section 4
+says to split it; it has not been split.
+
+| Task | Commit |
+|------|--------|
+| Scope | `b90a4fc` |
+| T0 | `06929eb` |
+| T1 | `d88cf66` |
+| T2 | `dab2118` |
+| T3 | `7056da1` |
+| T4 | `d525397` |
+| T5 | `3b70904` |
+| Review fixes | `31accef`, `8bc6063` |
+| Build script | `83bc0b0`, `a13ba93` |
+| Downloads table | `5682eb2`, `5e00f00`, `7416bf0`, `4ffe387`, `1a65cf5`, `b95c416`, `c6d4478`, `d7a855a`, `96ac840`, `b3d3c24` |
+| Theme | `ad8798e` |
+| Version | `aebcd21` |
+| T6 | the docs commit that adds this note |
+
+T0 fixed the Windows test failure only. The Phase 1 manual checks it also
+listed were not run, and PHASE1.md still lists them as outstanding.
+
+Changed or added during implementation (DESIGN.md 2.1, 2.2, 2.5, 3.1, and
+6.4 have the details):
+
+- The probe's output, and the output of **Update**, is decoded as UTF-8,
+  with the locale encoding as the fallback (`decode_output`). On Windows,
+  `yt-dlp.exe` writes cp1252 to a pipe, so a non-ASCII path in the probe
+  output is not valid UTF-8.
+- `Option`'s fields are in the order `(raw, name, value)`, not
+  `(name, value, raw)` as in 1.2, because `raw` comes from the shared
+  `Line` base class.
+- Adding an option to a file whose last line has no line ending first adds
+  one to that line, so the new option starts on a line of its own.
+- A `User` config that the probe reported but that is gone from disk makes
+  the page read-only, with the "reads this file differently" message:
+  there is nothing to check against the probe's tokens.
+- When the probe failed, the warning box shows the default config path
+  (DESIGN.md 3.1), because there is no `User` entry to name a file.
+- On Windows, yt-dlp also loads a user config from `XDG_CONFIG_HOME` or
+  `~/.config`, ahead of `%APPDATA%`. Yoink edits whichever file it reports
+  (DESIGN.md 3.1).
+- On Windows a folder build reports `win_exe`, so **Update** runs `-U` on
+  it. The `_dir` explanation (3.3) shows only on macOS and Linux
+  (DESIGN.md 6.4).
+- Tooltips are on the form labels as well as the widgets. The main
+  window's cookies combo resizes to its text, so "Config default (<value>)"
+  is not clipped once the probe reports.
+- Downloads table, beyond this scope (DESIGN.md 2.5): a status icon
+  column, the URL split into Scheme, Host, and Path, and five metadata
+  columns fed by a new META `--print` line (DESIGN.md 2.2). Columns are
+  resizable and movable, shown or hidden from a new View menu, and their
+  layout is saved. **Reset table layout** on the Yoink page restores it.
+- Per-row icon buttons replace the Cancel column: Cancel while running,
+  then Clear, and Open with an Open folder menu. The progress bar is
+  removed when a download ends (DESIGN.md 2.5).
+- Theme, beyond this scope: a **Theme** combo on the Yoink page picks a Qt
+  style, stored in `main/style` (DESIGN.md 2.1).
+- Version, beyond this scope: `yoink.__version__` comes from the package
+  metadata instead of a constant, and is logged at startup. The build
+  script includes the metadata (DESIGN.md section 7).
+- Build script, beyond this scope: `scripts/build.sh` makes a Nuitka
+  standalone test build in `dist/`, with Nuitka as a dev dependency
+  (DESIGN.md section 7, README).
+
+Remaining for the exit check:
+
+- The Phase 1 checks still open in PHASE1.md: a manual click-through of
+  its T4 to T6 checks in the real window, and one real cookie-gated
+  download with a browser chosen in the combo.
+- Clicking **Open in editor**.
+- A visible pass through the Preferences dialog, running the T3 to T5
+  checks in the real window.
+- The **Update** paths on macOS or Linux: the Homebrew command, the
+  `python3 -m pip` command, and the folder-build explanation.
 
 Source: [DESIGN.md](DESIGN.md) section 8, Phase 2, plus sections 3.1 to 3.4,
 4, 6.3, and 6.4.
@@ -516,7 +592,8 @@ Done when these sandbox checks pass:
   message. With a path, the file has `--cookies <path>` with forward
   slashes.
 - A quoted value that spans two lines: the page is read-only and the box
-  says why. A config with `--password x`: the page stays editable.
+  says why. A config with `--username u --password x`: the page stays
+  editable.
 - `--sub-langs` on two lines: both lines are in the box and the widget is
   disabled.
 - Edit the file through **Open in editor** while Preferences is open, then

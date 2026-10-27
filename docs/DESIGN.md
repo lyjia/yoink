@@ -42,7 +42,7 @@ yoink/
   argv.py            build the yt-dlp command line for one download
   job.py             DownloadJob: QProcess wrapper, progress line parser
   ui/
-    main_window.py   URL input, override controls, downloads table
+    main_window.py   URL input, override controls, downloads table and View menu (2.5)
     config_notice.py config override details dialog
     prefs_dialog.py  preferences: page list with Yoink, yt-dlp (Phase 2), Domains (Phase 3)
     log_view.py      per-job raw output viewer
@@ -58,11 +58,22 @@ Dependencies: PySide6, requests (binary download only). Python 3.11+.
 | Data                         | Where                                               |
 |------------------------------|-----------------------------------------------------|
 | yt-dlp-native options        | yt-dlp user config file (section 3)                 |
-| Window geometry, main-window overrides (directory, cookies), binary path | QSettings (`Lyjia/Yoink`) |
+| Window geometry, main-window overrides (directory, cookies), downloads table layout, theme, binary path | QSettings (`Lyjia/Yoink`) |
 | Per-domain overrides         | `overrides.json` in Yoink's app-data dir            |
 
 Per-domain rules are a list of structured records; QSettings handles those
 poorly, so they get a JSON file next to the QSettings store.
+
+The downloads table layout (column widths, order, and hidden columns) is
+the header state Qt saves, stored under
+`main/header/<crc32 of the column names>`. Qt restores it by column index,
+so a different column list gets a different key and starts from the
+defaults (2.5).
+
+Theme: `main/style` holds a `QStyleFactory` key, chosen on the Yoink page
+of Preferences, or is empty for the system default (the style Qt picks).
+It applies at startup and on Save; an unknown key falls back to the
+system default.
 
 If `YOINK_SETTINGS_DIR` is set, QSettings is stored as `yoink.ini` in that
 directory instead of the OS-native store. The sandbox
@@ -82,6 +93,7 @@ yt-dlp
   --progress-template "download:<YOINK-TSV>"
   --progress-template "postprocess:<YOINK-PP-TSV>"
   --print "before_dl:YOINK\tFILE\t%(filename)s"
+  --print "before_dl:YOINK\tMETA\t%(title)j\t%(uploader)j\t%(duration_string)j\t%(resolution)j\t%(upload_date>%Y-%m-%d)j"
   --print "after_move:YOINK\tDONE\t%(filepath)s"
   -- <url>
 ```
@@ -92,6 +104,11 @@ full progress dict embeds `info_dict` and produces multi-kilobyte lines:
 ```
 download:YOINK\tDL\t%(progress.status)s\t%(progress.downloaded_bytes)s\t%(progress.total_bytes)s\t%(progress.total_bytes_estimate)s\t%(progress.speed)s\t%(progress.eta)s
 ```
+
+The META line carries five fields for the table's metadata columns (2.5):
+title, uploader, duration_string, resolution, and upload_date. Each is
+JSON-encoded (`%(field)j`), so a tab or newline in a title can't shift the
+fields. `NA` means yt-dlp has no value, and shows as an empty cell.
 
 `--print` implies `--simulate`, hence the explicit `--no-simulate`. Both
 exact flag behaviour and the postprocess template fields must be verified
@@ -118,11 +135,12 @@ working directory is always the Downloads folder, so a config with only
 
 `DownloadJob(QObject)` owns one `QProcess`. It splits stdout on newlines,
 routes lines starting with `YOINK\t` to typed signals
-(`file_named`, `progress`, `postprocessing`, `done`), and appends everything
-else to an in-memory log. States: `queued`, `starting`, `downloading`,
-`postprocessing`, `finished`, `failed`, `cancelled`. Exit code non-zero with
-no `DONE` line means `failed`; the last stderr lines become the row's error
-text.
+(`file_named`, `metadata`, `progress`, `postprocessing`, `done`), and appends
+everything else to an in-memory log. `metadata` carries the five META
+fields (2.2), each an empty string where yt-dlp has no value. States:
+`queued`, `starting`, `downloading`, `postprocessing`, `finished`,
+`failed`, `cancelled`. Exit code non-zero with no `DONE` line means
+`failed`; the last stderr lines become the row's error text.
 
 Yoink passes `--progress` on the command line, which beats `--quiet` or
 `--no-progress` in a user config, so the protocol lines still arrive.
@@ -134,6 +152,30 @@ as supported, not an error.
 Playlists: each entry produces its own `FILE`/`DL`/`DONE` sequence. Phase 0
 shows them in one row with the current filename; splitting into child rows
 is backlog.
+
+### 2.5 Downloads table
+
+One row per download. The columns, in order: status icon, Status, Scheme,
+Host, Path, Filename, Downloaded, Total, Speed, Progress, Title, Uploader,
+Duration, Resolution, Upload date, and the row's buttons. Scheme and the
+five metadata columns (Title to Upload date, from the META line in 2.2)
+are hidden by default. The Path cell's tooltip is the full URL.
+
+- Every column is `QHeaderView.ResizeMode.Interactive` and movable.
+  Default widths are set once at startup; Yoink never resizes a column to
+  fit its contents.
+- The View menu has a checkable item for each column except the buttons.
+- The layout (widths, order, and hidden columns) is saved on close and
+  restored at start (2.1). **Reset table layout** on the Yoink page of
+  Preferences restores the defaults when the dialog closes, even on
+  Cancel.
+- The status icon is a `QStyle.StandardPixmap` for each job state, so no
+  image files ship with the app.
+- Buttons: Cancel while the download runs. Once it ends, Clear (remove the
+  row) and, for a finished row with a known file, Open, whose menu has
+  Open folder.
+- The progress bar is removed when a download ends, and the Speed cell is
+  emptied.
 
 ## 3. yt-dlp config editing (`ytdlp_config.py`)
 
@@ -147,6 +189,10 @@ not repeat that search. If yt-dlp loaded no user config, Yoink creates:
 - Linux/macOS: `${XDG_CONFIG_HOME:-~/.config}/yt-dlp/config`
 - Windows: `%APPDATA%\yt-dlp\config`
 
+On Windows, yt-dlp checks `XDG_CONFIG_HOME` (or `~/.config`) before
+`%APPDATA%` and honours both. Yoink creates the file under `%APPDATA%`
+only when yt-dlp loaded no user config.
+
 The Preferences dialog shows the path. Portable, home, system, and
 `--config-locations` files are never edited.
 
@@ -156,7 +202,7 @@ The file is a list of command-line arguments, one or more per line, shell-style
 quoting, `#` comments. Yoink parses it into a list of `Line` records:
 
 - `Comment` / `Blank`: preserved verbatim.
-- `Option(name, value, raw)`: a line containing exactly one long option with
+- `Option(raw, name, value)`: a line containing exactly one long option with
   an optional value. Editable.
 - `Opaque(raw)`: anything else (multiple options on one line, short flags,
   unparseable). Preserved verbatim, listed read-only in the warning box
@@ -269,9 +315,8 @@ the path yt-dlp actually wrote to.
 
 Before saving, Phase 2's editor compares its line-level parse with the
 probe's tokens for the same file. If they differ (for example a quoted
-value spanning lines, or a `#` inside a word), the yt-dlp page is
-read-only. The probe prints login values as `PRIVATE`, so the comparison
-masks them the same way.
+value spanning lines), the yt-dlp page is read-only. The probe prints
+login values as `PRIVATE`, so the comparison masks them the same way.
 
 ## 4. Cookies from browser
 
@@ -451,6 +496,11 @@ otherwise tells the user what to run:
 | `*_dir`, Yoink-managed | Yoink re-downloads it (6.5) |
 | `pip` | shows the right command for the detected method (`brew upgrade yt-dlp`, `pipx upgrade yt-dlp`, `uv tool upgrade yt-dlp`, or `python3 -m pip install -U yt-dlp`) with a Copy button; Yoink never runs package managers itself |
 | starred or unknown | shows yt-dlp's own update hint |
+
+On Windows a folder build reports `win_exe`, because of a path-separator
+bug in yt-dlp's variant detection. Update therefore runs `-U` on it, and
+yt-dlp replaces the folder's exe with the single-file build. The `_dir`
+explanation is reachable only on macOS and Linux.
 
 ### 6.5 Yoink-managed copy (Phase 4)
 
@@ -705,8 +755,9 @@ Nuitka, `--mode=app-dist --enable-plugin=pyside6` (a standalone folder, or a
 yt-dlp binary is not bundled; it is fetched on first run or found on PATH.
 `scripts/build.sh` (Git Bash on Windows, bash on Linux and macOS) makes a
 standalone test build in `dist/`, which git ignores: `dist/yoink.dist/` on
-Windows and Linux, `dist/yoink.app` on macOS. Release builds and CI builds
-are backlog.
+Windows and Linux, `dist/yoink.app` on macOS. It includes Yoink's package
+metadata, because `yoink.__version__` is read from it. Release builds and
+CI builds are backlog.
 
 macOS: Yoink.app runs into the same Gatekeeper problem as yt-dlp (6.6). An
 unsigned app downloaded in a browser is blocked until the user clicks
@@ -746,6 +797,9 @@ Yoink page: binary path and the Update button (6.4). The status bar, which
 shows the version since Phase 1, gains the install method (6.3) and a
 staleness warning. Listing every candidate binary, discovery in
 well-known locations, and the managed copy are Phase 4. Scope: [PHASE2.md](PHASE2.md).
+Done; the status and deviations are at the top of PHASE2.md. Main-window
+table work (2.5), a theme setting (2.1), and the build script (section 7)
+landed in the same phase.
 
 **Phase 3: Per-domain overrides.**
 `overrides.py`, Domains page, URL-driven directory prefill, pin button,
