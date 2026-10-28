@@ -211,8 +211,9 @@ three states and a checkbox can only express two:
   config".
 - Each control's tooltip says whether it is following the config or
   overriding it.
-- From Phase 3 on, Reset also clears a destination prefilled by a domain
-  rule. The rule applies again the next time a URL is entered.
+- Phase 3 made domain rules defaults rather than prefills, so Reset is
+  unchanged: a rule never fills in the directory field (PHASE3.md
+  section 5).
 
 ### 2.4 Persistence
 
