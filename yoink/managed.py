@@ -33,15 +33,17 @@ _HINTS = {
 _BREW_PATH = os.pathsep.join(["/opt/homebrew/bin", "/usr/local/bin"])
 
 
-def verify(asset: Path, sums_text: str) -> str:
-    """"" if `asset` matches its line in the `SHA2-256SUMS` text, else the reason it doesn't."""
+def verify(asset: Path, sums_text: str, name: str = "") -> str:
+    """"" if `asset` matches the `SHA2-256SUMS` line for `name` (default: its own file name),
+    else the reason it doesn't."""
+    name = name or asset.name
     for line in sums_text.splitlines():
-        digest, _, name = line.strip().partition(" ")
-        if name.strip().lstrip("*") == asset.name:
+        digest, _, entry = line.strip().partition(" ")
+        if entry.strip().lstrip("*") == name:
             with asset.open("rb") as f:
                 actual = hashlib.file_digest(f, "sha256").hexdigest()
             return "" if actual == digest.lower() else MISMATCH
-    return f"{SUMS} has no entry for {asset.name}."
+    return f"{SUMS} has no entry for {name}."
 
 
 def switch(root: Path) -> None:

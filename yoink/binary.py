@@ -55,15 +55,21 @@ def is_managed(path: Path | None) -> bool:
     return path == managed_path()
 
 
+def install_root(path: Path) -> Path:
+    """The folder build's folder (the one with `_internal/`), else the single-file binary itself."""
+    return path.parent if (path.parent / "_internal").is_dir() else path
+
+
 def is_quarantined(path: Path) -> bool:
-    """Whether anything in the binary's folder (including `_internal/`) has macOS quarantine."""
+    """Whether anything in the binary's install root (see install_root) has macOS quarantine."""
     if sys.platform != "darwin":
         return False
+    root = install_root(path)
     try:
-        out = subprocess.run(["xattr", "-lr", str(path.parent)], capture_output=True, text=True,
+        out = subprocess.run(["xattr", "-lr", str(root)], capture_output=True, text=True,
                              errors="replace", timeout=10, check=True).stdout
     except (OSError, subprocess.SubprocessError) as e:
-        log.warning("Couldn't check %s for quarantine: %s", path.parent, e)
+        log.warning("Couldn't check %s for quarantine: %s", root, e)
         return False
     return "com.apple.quarantine" in out
 

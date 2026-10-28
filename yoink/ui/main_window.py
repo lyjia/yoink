@@ -38,6 +38,7 @@ from yoink.job import DownloadJob, JobState, Progress
 from yoink.ui.config_notice import ConfigNoticeDialog
 from yoink.ui.options_form import side_by_side
 from yoink.ui.prefs_dialog import PrefsDialog
+from yoink.ui.setup_dialog import SetupDialog
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +102,9 @@ class MainWindow(QMainWindow):
         self.config_defaults = ytdlp_config.config_defaults(None)
         self.variant = ""  # the build, from the probe's debug header
         self._probe: QProcess | None = None
+        # The last result, as SetupDialog.show_result takes it; the dialog exists once opened.
+        self.probe_result: tuple[Path | None, str, str, str] = (self.binary_path, "", "", "")
+        self.setup_dialog: SetupDialog | None = None
         # Per-domain rules (docs/PHASE3.md section 5); `rule` matches the URL field.
         self._load_rules()
         self.url_host: str | None = None
@@ -200,6 +204,7 @@ class MainWindow(QMainWindow):
             action.toggled.connect(lambda on, c=col: hdr.setSectionHidden(c, not on))
             self.column_actions.append(action)
         help_menu = self.menuBar().addMenu("&Help")
+        help_menu.addAction("Set up yt-dlp…", self.show_setup)
         help_menu.addAction("About", self._about)
 
         # Override indicator (docs/PHASE1.md 1.3), left of the version.
@@ -243,6 +248,7 @@ class MainWindow(QMainWindow):
                 f"yt-dlp not found: {self.binary_path}" if self.binary_path else "yt-dlp not found on PATH")
             self.status_label.setToolTip("Set the yt-dlp program in Preferences.")
             self.start_btn.setEnabled(False)
+            self._set_probe_result(self.binary_path, "", "", "")
             return
         self.status_label.setText("Checking yt-dlp…")
         self.status_label.setToolTip(str(self.binary_path))
@@ -287,8 +293,10 @@ class MainWindow(QMainWindow):
 
         ver = ytdlp_config.parse_version(text)
         self.variant = ver[1] if ver else ""
+        method = binary.install_method(self.binary_path, self.variant)
+        self._set_probe_result(self.binary_path, ver[0] if ver else "", method, text.strip())
         if ver:
-            status = f"yt-dlp {ver[0]} ({binary.install_method(self.binary_path, ver[1])})"
+            status = f"yt-dlp {ver[0]} ({method})"
         else:
             status = "yt-dlp unknown version"
         tip = str(self.binary_path)
@@ -298,6 +306,23 @@ class MainWindow(QMainWindow):
             status = f"{status}, config: unknown" if ver else "yt-dlp config: unknown"
         self.status_label.setText(status)
         self.status_label.setToolTip(tip)
+
+    def _set_probe_result(self, found: Path | None, version: str, method: str, output: str) -> None:
+        self.probe_result = result = (found, version, method, output)
+        if self.setup_dialog and self.setup_dialog.isVisible():
+            self.setup_dialog.show_result(*result)
+
+    def show_setup(self) -> None:
+        if not self.setup_dialog:
+            self.setup_dialog = SetupDialog(self)
+            self.setup_dialog.check_requested.connect(self._check_again)
+        self.setup_dialog.show_result(*self.probe_result)
+        self.setup_dialog.open()
+
+    def _check_again(self) -> None:
+        """Discovery and the probe again: a new managed copy, say, replaces a broken one."""
+        self.binary_path = binary.find_binary(self.settings.value(app.KEY_BINARY_PATH))
+        self.refresh_config()
 
     def _set_conflicts(self, conflicts: list[ytdlp_config.Occurrence]) -> None:
         self.conflicts = conflicts
