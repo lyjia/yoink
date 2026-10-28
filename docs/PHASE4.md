@@ -93,9 +93,11 @@ reports with signals: `progress(int received, int total)`,
    permission bits and symlinks, which `zipfile` does not. Other
    platforms: `chmod +x` on Linux, nothing on Windows.
 4. Warm-up: run the new binary with `PROBE_ARGS` through `QProcess` with
-   the probe's timeout, status "Preparing yt-dlp…". A non-zero exit or
-   timeout fails with the output, so a broken download never replaces a
-   working copy.
+   the probe's timeout, status "Preparing yt-dlp…". It passes when the
+   process exits normally and prints the version header; the exit code is
+   not the test, because yt-dlp exits 2 without a URL. A crash, timeout, or
+   missing header fails with the output, so a broken download never
+   replaces a working copy.
 5. Switch: rename `current/` to `old/` if it exists, `new/` to `current/`,
    then delete `old/`. On any failure before this step, `current/` is
    untouched and `new/` is deleted.
