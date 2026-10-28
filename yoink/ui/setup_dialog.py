@@ -142,7 +142,7 @@ class SetupDialog(QDialog):
                   self.progress, self.status, buttons):
             layout.addWidget(w)
         self._show_progress(False)
-        self.resize(560, 0)
+        self.setMinimumWidth(560)
 
     def show_result(self, found: Path | None, version: str, method: str, output: str) -> None:
         """Show the probe's result for `found`: working if it reported a version."""
@@ -168,6 +168,12 @@ class SetupDialog(QDialog):
             self.choose_zip.setVisible(self._folder_build)
             self._fetch_sums()
             self._check_copy()
+        self._fit()
+
+    def _fit(self) -> None:
+        """Grow or shrink to the current state; wrapped labels need the layout settled first."""
+        self.layout().activate()
+        self.resize(self.width(), self.sizeHint().height())
 
     # ---- download ---------------------------------------------------------
 
@@ -250,6 +256,7 @@ class SetupDialog(QDialog):
         self.repair_icon.setPixmap(self.style().standardIcon(icon).pixmap(32, 32))
         self.repair_text.setText(text)
         self.allow.setEnabled(self._verified)
+        self._fit()
 
     def _choose_zip(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
