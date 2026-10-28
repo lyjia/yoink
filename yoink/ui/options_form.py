@@ -123,8 +123,9 @@ def side_by_side(*widgets: QWidget, stretch: int | None = 0) -> QWidget:
     return row
 
 
-def browse_row(edit: QLineEdit, kind: str = "file") -> QWidget:
-    """`edit` with a Browse… button for an existing file, a "folder", or an "archive"."""
+def browse_row(edit: QLineEdit, kind: str = "file", field: QWidget | None = None) -> QWidget:
+    """`field` (`edit` by default; say, the combo box `edit` belongs to) with a Browse…
+    button that fills `edit` with an existing file, a "folder", or an "archive"."""
     def browse() -> None:
         start = edit.text()
         if kind == "folder":
@@ -139,7 +140,7 @@ def browse_row(edit: QLineEdit, kind: str = "file") -> QWidget:
 
     button = QPushButton("Browse…")
     button.clicked.connect(browse)
-    return side_by_side(edit, button)
+    return side_by_side(field or edit, button)
 
 
 class OptionsForm(QScrollArea):

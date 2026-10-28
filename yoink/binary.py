@@ -38,17 +38,25 @@ def managed_path() -> Path:
     return app_data / "yt-dlp" / "current" / _EXECUTABLE.get(sys.platform, "yt-dlp_linux")
 
 
+def candidates() -> list[Path]:
+    """Every copy of yt-dlp found, in discovery order: the managed copy, PATH, then the
+    well-known directories. Paths as found; duplicates (after resolving links) dropped."""
+    dirs = [*os.environ.get("PATH", "").split(os.pathsep),
+            *(os.path.expandvars(os.path.expanduser(d))
+              for d in _WELL_KNOWN.get(sys.platform, _WELL_KNOWN["linux"]))]
+    found = [managed_path()] if managed_path().is_file() else []
+    found += [Path(hit) for d in dirs if d and (hit := shutil.which("yt-dlp", path=d))]
+    unique: dict[Path, Path] = {}
+    for path in found:
+        unique.setdefault(path.resolve(), path)
+    return list(unique.values())
+
+
 def find_binary(override: str | None = None) -> Path | None:
-    """The configured path, even if nothing is there, else the first copy found."""
+    """The configured path, even if nothing is there, else the first of candidates()."""
     if override:
         return Path(override).expanduser()
-    if managed_path().is_file():
-        return managed_path()
-    dirs = (os.path.expandvars(os.path.expanduser(d))
-            for d in _WELL_KNOWN.get(sys.platform, _WELL_KNOWN["linux"]))
-    found = shutil.which("yt-dlp") or shutil.which(
-        "yt-dlp", path=os.pathsep.join(d for d in dirs if os.path.isdir(d)))
-    return Path(found) if found else None
+    return next(iter(candidates()), None)
 
 
 def is_managed(path: Path | None) -> bool:

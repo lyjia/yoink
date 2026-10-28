@@ -336,6 +336,7 @@ class MainWindow(QMainWindow):
 
     def show_prefs(self) -> None:
         dialog = PrefsDialog(self.settings, self.loaded_configs, self.binary_path, self.variant, self)
+        dialog.setup_requested.connect(self.show_setup)
         dialog.exec()
         dialog.deleteLater()
         if dialog.binary_changed:

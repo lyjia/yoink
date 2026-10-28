@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -5,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from yoink import binary
-from yoink.binary import (can_self_update, find_binary, install_method, is_blocked, is_managed,
-                          is_quarantined, managed_path, update_command)
+from yoink.binary import (can_self_update, candidates, find_binary, install_method, is_blocked,
+                          is_managed, is_quarantined, managed_path, update_command)
 
 EXE = "yt-dlp.exe" if sys.platform == "win32" else "yt-dlp"
 
@@ -56,6 +57,22 @@ def test_find_binary_well_known(dirs):
 
 def test_find_binary_none(dirs):
     assert find_binary() is None
+
+
+def test_candidates_order(dirs):
+    on_path, well_known = (_make_exe(d / EXE) for d in dirs)
+    managed = _make_exe(managed_path())
+    assert candidates() == [managed, on_path, well_known]
+
+
+def test_candidates_without_duplicates(dirs, monkeypatch):
+    on_path = _make_exe(dirs[0] / EXE)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(dirs[0]), str(dirs[0]) + os.sep]))
+    assert candidates() == [on_path]
+
+
+def test_candidates_none(dirs):
+    assert candidates() == []
 
 
 @pytest.mark.parametrize(("exited", "output", "quarantined", "blocked"), [

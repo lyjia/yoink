@@ -3,7 +3,7 @@ section 2, docs/PHASE3.md section 4)."""
 
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, QSettings, QUrl
+from PySide6.QtCore import QProcess, QSettings, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -47,9 +47,11 @@ from yoink.ytdlp_config import (
 )
 
 TITLE = "Preferences"
-BINARY_TIP = "The yt-dlp program that Yoink runs. Leave empty to use the one Yoink finds on its own."
+BINARY_TIP = ("The yt-dlp program that Yoink runs. Leave empty to use the one Yoink finds on its own. "
+              "The list shows every copy Yoink found.")
 UPDATE_TIP = "Updates the yt-dlp program that Yoink is using, or shows how to update it."
 UPDATE_TITLE = "Update yt-dlp"
+SETUP_TIP = "Checks the yt-dlp program, and can download a copy for Yoink to keep."
 STYLE_TIP = "How windows, buttons, and lists are drawn. System default matches the rest of your computer."
 RESET_TIP = "Puts the download table's columns back to their default widths, order, and visibility."
 # What Update says for a build that yt-dlp can't update itself (3.3).
@@ -122,6 +124,8 @@ class PrefsDialog(QDialog):
     """Save writes what changed. The caller then reads `binary_changed`, `config_written`,
     and `rules_written`, and `updated` and `table_reset`, which Cancel does not reset."""
 
+    setup_requested = Signal()
+
     def __init__(self, settings: QSettings, loaded: list[LoadedConfig] | None,
                  binary_path: Path | None, variant: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -161,7 +165,13 @@ class PrefsDialog(QDialog):
 
     def _yoink_page(self) -> QWidget:
         self.binary_setting = self.settings.value(app.KEY_BINARY_PATH, "")
-        self.binary_edit = QLineEdit(self.binary_setting, toolTip=BINARY_TIP)
+        # Every copy found (PHASE4.md 1); the line edit holds the setting, as before.
+        self.binary_edit = QLineEdit(toolTip=BINARY_TIP)
+        combo = QComboBox(toolTip=BINARY_TIP, insertPolicy=QComboBox.InsertPolicy.NoInsert)
+        combo.setLineEdit(self.binary_edit)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.addItems([str(p) for p in binary.candidates()])
+        self.binary_edit.setText(str(self.binary_setting))
         self.binary_edit.setClearButtonEnabled(True)
         self.binary_edit.setPlaceholderText(
             str(self.binary_path) if self.binary_path else "yt-dlp not found on PATH")
@@ -172,9 +182,11 @@ class PrefsDialog(QDialog):
         update = QPushButton("Update", toolTip=f"{UPDATE_TIP}\n{self.binary_path}")
         update.setEnabled(self.binary_path is not None and self.binary_path.is_file())
         update.clicked.connect(self._update)
+        setup = QPushButton("Set up yt-dlp…", toolTip=SETUP_TIP)
+        setup.clicked.connect(self.setup_requested)
         page = QWidget()
         form = QFormLayout(page)
-        row = side_by_side(browse_row(self.binary_edit), update)
+        row = side_by_side(browse_row(self.binary_edit, field=combo), update, setup)
         form.addRow("yt-dlp program:", row)
         form.labelForField(row).setToolTip(BINARY_TIP)
         self.style_setting = self.settings.value(app.KEY_STYLE, "")

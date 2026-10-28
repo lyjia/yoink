@@ -24,8 +24,8 @@ Decisions made while scoping, which change DESIGN.md sections 6.2, 6.5,
   directly, a folder build is compared with the zip the user points at.
   Otherwise the button stays disabled and the warning says why. The
   design's fallback of fetching a fresh zip to compare against is dropped.
-- **Discovery stays flat.** Four steps (section 1). No candidate list in
-  Preferences; the binary path field covers choosing another copy.
+- **Discovery stays flat.** Four steps (section 1). The Preferences binary
+  path field lists every copy found, as paths only; no copy is probed.
 - **The managed copy has a fixed path**, `<appdata>/yt-dlp/current/`, not
   a versioned directory and a settings key. Switching is a rename.
 - **No new dependency.** Downloads use `QNetworkAccessManager`. Release
@@ -50,6 +50,12 @@ Decisions made while scoping, which change DESIGN.md sections 6.2, 6.5,
 
    Step 4 exists because an app launched from Finder gets launchd's PATH,
    which has no `/opt/homebrew/bin` (DESIGN.md 6.2).
+
+`candidates() -> list[Path]`: every copy that steps 2 to 4 find, in that
+order, one `shutil.which` per directory. A copy reachable from two
+directories (the same directory twice, or a symlink) is listed once, under
+the path where it was first found. `find_binary` without an override
+returns the first.
 
 `managed_path() -> Path`: `<appdata>/yt-dlp/current/` joined with the
 platform's executable name: `yt-dlp_macos/yt-dlp_macos` on macOS (the
@@ -183,6 +189,10 @@ through the probe.
 
 `prefs_dialog.py`:
 
+- The binary path field is an editable dropdown of `candidates()`. Empty
+  still means "let Yoink find it".
+- **Set up yt-dlp…** beside Update emits `setup_requested`; `show_prefs`
+  connects it to `show_setup`. The setup dialog opens over Preferences.
 - `_update` for a `_dir` build that is not managed: the `DIR_BUILD`
   message gains a **Download Yoink's own copy** button that opens the
   setup dialog. For the managed `_dir` build, Update runs `Installer`
