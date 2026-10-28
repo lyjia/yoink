@@ -21,7 +21,7 @@ RELEASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"  # tests 
 ASSET = {"darwin": "yt-dlp_macos.zip", "win32": "yt-dlp.exe", "linux": "yt-dlp_linux"}
 SUMS = "SHA2-256SUMS"
 WARMUP_TIMEOUT_MS = 20_000  # as the config probe
-MISMATCH = "The download didn't match the published checksum."
+MISMATCH = "The file doesn't match the published checksum."
 
 _HINTS = {
     "darwin": [("Homebrew", "brew install yt-dlp")],

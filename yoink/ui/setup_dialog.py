@@ -5,6 +5,7 @@ with `show_result`. See docs/PHASE4.md sections 3 and 4 and docs/DESIGN.md 6.6 a
 """
 
 import hashlib
+import html
 import subprocess
 import zipfile
 from pathlib import Path
@@ -42,7 +43,13 @@ THEN_CHECK = "then click Check again."
 # Repair verification (PHASE4.md section 4).
 BLOCKED = "macOS blocks this copy. Yoink only unblocks a copy it can verify."
 CHECKING = "Checking this copy against yt-dlp's published checksums…"
-CANT_VERIFY = "Yoink can't verify this copy, so it recommends {}. {}"
+APPLE_HELP = "https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unidentified-developer-mh40616/mac"
+CANT_VERIFY = (
+    "macOS blocks this copy because it is quarantined: it was downloaded in a browser. "
+    "Yoink couldn't verify it against yt-dlp's published checksums ({error}), so it may have "
+    "been tampered with, and Yoink won't unblock it. Use &quot;{download}&quot; instead, or "
+    "clear the quarantine yourself (<a href=\"{url}\">Apple's instructions</a>)."
+)
 NO_ZIP = "To verify it, choose the zip you downloaded."
 SUMS_FAILED = "Yoink couldn't download yt-dlp's checksums: {}"
 MATCHES = "This copy matches yt-dlp."
@@ -105,7 +112,7 @@ class SetupDialog(QDialog):
         self.output = QPlainTextEdit(readOnly=True)
 
         self.repair_icon = QLabel()
-        self.repair_text = QLabel(wordWrap=True)
+        self.repair_text = QLabel(wordWrap=True, openExternalLinks=True)
         self.choose_zip = QPushButton(CHOOSE_ZIP)
         self.choose_zip.clicked.connect(self._choose_zip)
         self.allow = QPushButton(ALLOW)
@@ -250,7 +257,8 @@ class SetupDialog(QDialog):
         if self._sums is None:
             text = f"{BLOCKED} {CHECKING}"
         else:
-            text = MATCHES if self._verified else f"{BLOCKED} {CANT_VERIFY.format(DOWNLOAD, error)}"
+            text = MATCHES if self._verified else CANT_VERIFY.format(
+                error=html.escape(error.rstrip(".")), download=DOWNLOAD, url=APPLE_HELP)
         sp = QStyle.StandardPixmap
         icon = sp.SP_DialogApplyButton if self._verified else sp.SP_MessageBoxCritical
         self.repair_icon.setPixmap(self.style().standardIcon(icon).pixmap(32, 32))
