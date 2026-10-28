@@ -1,10 +1,12 @@
-"""Preferences: a page list with the Yoink and yt-dlp pages (docs/PHASE2.md section 2)."""
+"""Preferences: a page list with the Yoink, yt-dlp, and Domains pages (docs/PHASE2.md
+section 2, docs/PHASE3.md section 4)."""
 
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, QSettings, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -21,11 +23,13 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QStyle,
     QStyleFactory,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from yoink import app, argv, binary
+from yoink import app, argv, binary, overrides
 from yoink.ui.options_form import PLACEHOLDERS, OptionsForm, browse_row, side_by_side
 from yoink.ytdlp_config import (
     ConfigChanged,
@@ -63,15 +67,56 @@ MISMATCH = ("Yoink reads this file differently from yt-dlp, so it can't edit it 
 NOT_LOADED = "yt-dlp doesn't load this file, so editing it would have no effect."
 KEPT = "Yoink doesn't manage these lines. They are kept as they are."
 
+RULE_TITLE = "Domain rule"
+DOMAIN_TIP = ("A site name such as youtube.com. The rule also applies to its subdomains, "
+              "such as www.youtube.com.")
+
 
 def _missing(path: str) -> bool:
     """A non-empty path with no file at it."""
     return bool(path) and not Path(path).expanduser().is_file()
 
 
+class RuleDialog(QDialog):
+    """Edits one domain rule (PHASE3.md 4). OK leaves the results in `domain` and `options`."""
+
+    def __init__(self, domain: str, options: dict[str, str | bool],
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(RULE_TITLE)
+        self.domain_edit = QLineEdit(domain, toolTip=DOMAIN_TIP)
+        domain_row = QFormLayout()
+        domain_row.addRow("Domain:", self.domain_edit)
+        domain_row.labelForField(self.domain_edit).setToolTip(DOMAIN_TIP)
+        self.form = OptionsForm()
+        self.form.load(options)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addLayout(domain_row)
+        layout.addWidget(QLabel("An empty setting follows the yt-dlp config.", wordWrap=True))
+        layout.addWidget(self.form, 1)
+        layout.addWidget(buttons)
+        self.resize(560, 640)
+
+    def accept(self) -> None:
+        self.domain = overrides.normalize_domain(self.domain_edit.text())
+        if not self.domain:
+            QMessageBox.warning(self, RULE_TITLE, "Enter a domain, such as youtube.com.")
+            return
+        if msg := self.form.validate():
+            QMessageBox.warning(self, RULE_TITLE, msg)
+            return
+        self.options = {k: v for k, v in self.form.values().items() if v}
+        super().accept()
+
+
 class PrefsDialog(QDialog):
-    """Save writes what changed. The caller then reads `binary_changed` and
-    `config_written`, and `updated` and `table_reset`, which Cancel does not reset."""
+    """Save writes what changed. The caller then reads `binary_changed`, `config_written`,
+    and `rules_written`, and `updated` and `table_reset`, which Cancel does not reset."""
 
     def __init__(self, settings: QSettings, loaded: list[LoadedConfig] | None,
                  binary_path: Path | None, variant: str, parent: QWidget | None = None) -> None:
@@ -79,7 +124,8 @@ class PrefsDialog(QDialog):
         self.setWindowTitle(TITLE)
         self.settings = settings
         self.binary_path, self.variant = binary_path, variant  # the binary in use
-        self.binary_changed = self.config_written = self.updated = self.table_reset = False
+        self.binary_changed = self.config_written = self.rules_written = False
+        self.updated = self.table_reset = False
 
         self.page_list = QListWidget()
         self.page_list.setFixedWidth(120)
@@ -87,6 +133,7 @@ class PrefsDialog(QDialog):
         self.page_list.currentRowChanged.connect(self.stack.setCurrentIndex)
         self._add_page("Yoink", QStyle.StandardPixmap.SP_ComputerIcon, self._yoink_page())
         self._add_page("yt-dlp", QStyle.StandardPixmap.SP_FileIcon, self._ytdlp_page(loaded))
+        self._add_page("Domains", QStyle.StandardPixmap.SP_DriveNetIcon, self._domains_page())
         self.page_list.setCurrentRow(0)
 
         buttons = QDialogButtonBox(
@@ -233,6 +280,70 @@ class PrefsDialog(QDialog):
             return path, config, MISMATCH
         return path, config, ""
 
+    # ---- Domains page (PHASE3.md 4) ---------------------------------------
+
+    def _domains_page(self) -> QWidget:
+        self.rules_path = overrides.rules_path()
+        self.rules_setting = overrides.load_rules(self.rules_path)
+        self.rules = dict(self.rules_setting)  # an edit replaces a whole entry
+        table = self.rules_table = QTableWidget(0, 2, wordWrap=False)
+        table.setHorizontalHeaderLabels(["Domain", "Settings"])
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.verticalHeader().hide()
+        table.itemDoubleClicked.connect(lambda _: self._edit_rule(self._selected_rule()))
+        add, edit, remove = QPushButton("Add…"), QPushButton("Edit…"), QPushButton("Remove")
+        add.clicked.connect(lambda: self._edit_rule(""))
+        edit.clicked.connect(lambda: self._edit_rule(self._selected_rule()))
+        remove.clicked.connect(self._remove_rule)
+        for button in (edit, remove):
+            button.setEnabled(False)
+            table.itemSelectionChanged.connect(
+                lambda b=button: b.setEnabled(bool(self._selected_rule())))
+        self._fill_rules()
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(table, 1)
+        layout.addWidget(side_by_side(add, edit, remove, stretch=None))
+        return page
+
+    def _fill_rules(self, select: str = "") -> None:
+        """Show `rules`, sorted by domain, with the `select` row selected."""
+        self.rules_table.setRowCount(0)
+        self.rules_table.setRowCount(len(self.rules))
+        for row, domain in enumerate(sorted(self.rules)):
+            flags = " ".join(overrides.rule_argv(self.rules[domain]))
+            settings = QTableWidgetItem(flags)
+            settings.setToolTip(flags)
+            self.rules_table.setItem(row, 0, QTableWidgetItem(domain))
+            self.rules_table.setItem(row, 1, settings)
+            if domain == select:
+                self.rules_table.selectRow(row)
+
+    def _selected_rule(self) -> str:
+        """The selected row's domain, or ""."""
+        rows = self.rules_table.selectionModel().selectedRows()
+        return self.rules_table.item(rows[0].row(), 0).text() if rows else ""
+
+    def _edit_rule(self, domain: str) -> None:
+        """Edit the rule for `domain`, or add one if it is ""."""
+        dialog = RuleDialog(domain, self.rules.get(domain, {}), self)
+        if not dialog.exec():
+            return
+        if dialog.domain != domain and dialog.domain in self.rules:
+            QMessageBox.warning(self, TITLE, f"A rule for {dialog.domain} already exists.")
+            return
+        self.rules.pop(domain, None)
+        self.rules[dialog.domain] = dialog.options
+        self._fill_rules(dialog.domain)
+
+    def _remove_rule(self) -> None:
+        del self.rules[self._selected_rule()]
+        self._fill_rules()
+
     # ---- saving -----------------------------------------------------------
 
     def accept(self) -> None:
@@ -245,6 +356,13 @@ class PrefsDialog(QDialog):
             return
         if not self._save_config():
             return
+        if self.rules != self.rules_setting:
+            try:
+                overrides.save_rules(self.rules_path, self.rules)
+            except OSError as e:
+                QMessageBox.warning(self, TITLE, f"Yoink couldn't save the domain rules:\n{e}")
+                return
+            self.rules_written = True
         if binary_path != self.binary_setting:
             self.settings.setValue(app.KEY_BINARY_PATH, binary_path)
             self.binary_changed = True
