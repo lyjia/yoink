@@ -14,7 +14,8 @@ against the roughly 2250 estimated in section 6.
 | T3 | `cd8cf61` |
 | T4 | `f00e7ee` |
 | T5 | `15123d4` |
-| T6 | the docs commit that adds this note |
+| T6 | `3d11115` |
+| Review fixes | `6ef2c71` |
 
 Changed or added during implementation:
 
@@ -33,13 +34,20 @@ Changed or added during implementation:
   `""` or `False`, `True`, or a string.
 - The Domains page sorts rules by domain, and keeps **Edit…** and
   **Remove** disabled until a row is selected. One `_edit_rule` handles
-  both **Add…** and **Edit…**, so the duplicate-domain warning is written
-  once.
+  both **Add…** and **Edit…**. The rule editor rejects a domain another
+  rule has, so a duplicate does not discard what was typed.
 - The pin's confirmation shows the old and new folder. The first pin for a
   host creates the rule without asking. The pin's domain is the matched
   rule's domain, else the URL's host without `www.`.
 - `PrefsDialog` gained `rules_written`. Save writes `overrides.json` only
-  when the rules changed, and a failed write keeps the dialog open.
+  when the rules changed, before the yt-dlp config, so a failed rules
+  write keeps the dialog open and Save can be retried.
+- `load_rules` keeps only well-formed entries: a domain that normalizes to
+  something, an object value, and string or boolean settings. Anything
+  else is dropped with one warning. A rule's `--paths` counts only when it
+  is a home path, as the config's does.
+- `rule_lines` formats a rule for the Domains page and the rule label;
+  `rule_argv` builds on it.
 - `normalize_domain(" www. ")` yields `www`, which the rule editor
   accepts. This is harmless and left alone.
 
