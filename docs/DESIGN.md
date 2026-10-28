@@ -370,8 +370,9 @@ omitted. Paths use forward slashes, as in the yt-dlp config (3.2).
 
 A rule matches a URL by host suffix: `youtube.com` matches
 `www.youtube.com` and `m.youtube.com`, but not `notyoutube.com`. The host
-is compared in lowercase, without its port. The longest matching domain
-wins. Domains are stored in lowercase, without a leading `www.`.
+is compared in lowercase, without its port. A URL without a scheme is
+matched as if it had one. The longest matching domain wins. Domains are
+stored in lowercase, without a leading `www.`.
 
 Resolution per download:
 
@@ -842,7 +843,8 @@ editor. In the main window, a matching rule sets the defaults of the
 directory and cookies controls, shown with a green border and a rule
 label, and a pin button saves the current folder to a rule. `argv.py`
 passes the rule's options ahead of the main-window overrides (2.2). Scope:
-[PHASE3.md](PHASE3.md).
+[PHASE3.md](PHASE3.md). Done; the status and deviations are at the top of
+PHASE3.md.
 
 **Phase 4: Onboarding.**
 Decide the setup-flow options first (6.7). Then build:

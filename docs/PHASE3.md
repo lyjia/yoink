@@ -2,17 +2,56 @@
 
 ## Status
 
-Not started.
+Implemented on branch `phase-3-domains`. `uv run pytest` passes (172
+tests, plus 1 skipped on Windows). Application code is about 2280 lines,
+against the roughly 2250 estimated in section 6.
 
 | Task | Commit |
 |------|--------|
-| Scope | |
-| T1 | |
-| T2 | |
-| T3 | |
-| T4 | |
-| T5 | |
-| T6 | |
+| Scope | `f24535e` |
+| T1 | `2a917a9` |
+| T2 | `521c7e2` |
+| T3 | `cd8cf61` |
+| T4 | `f00e7ee` |
+| T5 | `15123d4` |
+| T6 | the docs commit that adds this note |
+
+Changed or added during implementation:
+
+- A URL without a scheme (`youtube.com/watch?v=x`) also matches a rule.
+  The host is parsed as if `//` preceded it, because yt-dlp accepts such
+  URLs.
+- The green border is a style sheet scoped to the widget's class
+  (`QComboBox { border: ... }`), so the combo's popup list keeps its own
+  frame.
+- `_refresh_defaults` calls `_overrides_changed`, not the reverse as in
+  section 5. The defaults are set first, then the borders and tooltips, in
+  one place.
+- `options_form.py` exposes `browse_row(edit, kind)` as a module function,
+  which the Yoink page's binary field also uses. The browser field builder
+  is a module function too. `_Field.set` takes `set_option`'s vocabulary:
+  `""` or `False`, `True`, or a string.
+- The Domains page sorts rules by domain, and keeps **Edit…** and
+  **Remove** disabled until a row is selected. One `_edit_rule` handles
+  both **Add…** and **Edit…**, so the duplicate-domain warning is written
+  once.
+- The pin's confirmation shows the old and new folder. The first pin for a
+  host creates the rule without asking. The pin's domain is the matched
+  rule's domain, else the URL's host without `www.`.
+- `PrefsDialog` gained `rules_written`. Save writes `overrides.json` only
+  when the rules changed, and a failed write keeps the dialog open.
+- `normalize_domain(" www. ")` yields `www`, which the rule editor
+  accepts. This is harmless and left alone.
+
+Remaining for the exit check:
+
+- A visible click-through of the T3 to T5 checks in the real window. They
+  were checked headless (`QT_QPA_PLATFORM=offscreen`), and the deliverable
+  download has not been run.
+- The look of the green border under the Windows and Fusion styles.
+- The sandbox run with a `127.0.0.1` rule.
+- `uv run pytest` on macOS or Linux, and a plain `yt-dlp` run with a rule
+  present, to confirm the config file is untouched.
 
 Source: [DESIGN.md](DESIGN.md) section 8, Phase 3, plus sections 2.1 to
 2.3, 4, and 5.
