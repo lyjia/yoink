@@ -36,7 +36,8 @@ from PySide6.QtWidgets import (
 from yoink import __version__, app, argv, binary, overrides, ytdlp_config
 from yoink.job import DownloadJob, JobState, Progress
 from yoink.ui.config_notice import ConfigNoticeDialog
-from yoink.ui.prefs_dialog import PrefsDialog, side_by_side
+from yoink.ui.options_form import side_by_side
+from yoink.ui.prefs_dialog import PrefsDialog
 
 log = logging.getLogger(__name__)
 
@@ -330,20 +331,25 @@ class MainWindow(QMainWindow):
     def _url_changed(self) -> None:
         text = self.url_edit.text().strip()
         try:  # yt-dlp accepts a URL without a scheme; so does the match
-            self.url_host = urlparse(text if "//" in text else "//" + text).hostname
+            scheme = re.match(r"[a-z][a-z0-9+.-]*://|//", text, re.I)
+            self.url_host = urlparse(text if scheme else "//" + text).hostname
         except ValueError:  # say, an unclosed "[" in the host
             self.url_host = None
         self.rule_domain = overrides.match(self.url_host, self.rules)
         self.rule = self.rules[self.rule_domain] if self.rule_domain else {}
         self._refresh_defaults()
 
+    @property
+    def rule_dir(self) -> str:
+        """The rule's home download folder, or ""."""
+        return ytdlp_config.home_path(str(self.rule.get("--paths") or "")) or ""
+
     def _refresh_defaults(self) -> None:
         """Show the defaults in effect: the URL's rule, else the config (docs/PHASE3.md section 5)."""
         d = self.config_defaults
-        # Both options take a string; str() is for the typechecker.
-        rule_dir = str(self.rule.get("--paths") or "")
+        # The option takes a string; str() is for the typechecker.
         rule_cookies = str(self.rule.get("--cookies-from-browser") or "")
-        directory = ytdlp_config.home_path(rule_dir) if rule_dir else d.directory
+        directory = self.rule_dir or d.directory
         fallback = "Set by yt-dlp config" if d.sets_directory else argv.default_download_dir()
         self.dir_edit.setPlaceholderText(ytdlp_config.to_display_path(directory) or fallback)
         # The cookies tooltip and pitfall text follow this, too.
@@ -352,8 +358,7 @@ class MainWindow(QMainWindow):
             0, f"Config default ({self.config_cookies})" if self.config_cookies else "Config default")
         self.rule_label.setVisible(self.rule_domain is not None)
         self.rule_label.setText(f"Rule for {self.rule_domain} applies")
-        self.rule_label.setToolTip("\n".join(
-            name if value is True else f"{name} {value}" for name, value in self.rule.items() if value))
+        self.rule_label.setToolTip("\n".join(overrides.rule_lines(self.rule)))
         self._overrides_changed()
 
     def _overrides_changed(self) -> None:
@@ -362,18 +367,19 @@ class MainWindow(QMainWindow):
         self.reset_btn.setEnabled(bool(directory or cookies))
         # A green border marks a rule's default while it is in effect.
         rule_tip = f"Default from the {self.rule_domain} rule."
-        rule_dir = not directory and bool(self.rule.get("--paths"))
-        rule_cookies = not cookies and bool(self.rule.get("--cookies-from-browser"))
-        for widget, on in ((self.dir_edit, rule_dir), (self.cookies_combo, rule_cookies)):
+        dir_from_rule = not directory and bool(self.rule_dir)
+        cookies_from_rule = not cookies and bool(self.rule.get("--cookies-from-browser"))
+        for widget, on in ((self.dir_edit, dir_from_rule), (self.cookies_combo, cookies_from_rule)):
             # Scoped to the widget's class, so a combo's popup list keeps its own frame.
             widget.setStyleSheet(f"{type(widget).__name__} {{ border: 2px solid green }}" if on else "")
+        overridden = f"the {self.rule_domain} rule" if self.rule_dir else "the yt-dlp config"
         self.dir_edit.setToolTip(
-            "Overriding the yt-dlp config. Clear the field to follow it."
+            f"Overriding {overridden}. Clear the field to follow it."
             if directory
-            else f"{rule_tip if rule_dir else FOLLOWING} Type or browse to override it."
+            else f"{rule_tip if dir_from_rule else FOLLOWING} Type or browse to override it."
         )
         if not cookies:
-            tip = rule_tip if rule_cookies else FOLLOWING
+            tip = rule_tip if cookies_from_rule else FOLLOWING
             # The spec is BROWSER[+KEYRING][:PROFILE][::CONTAINER].
             if (spec := self.config_cookies) and spec != "none":
                 tip += f" It reads cookies from {spec}."
@@ -386,7 +392,7 @@ class MainWindow(QMainWindow):
             if cookies in PITFALLS:
                 tip += "\n" + PITFALLS[cookies]
         self.cookies_combo.setToolTip(tip)
-        self.pin_btn.setEnabled(bool(self.url_host and directory))
+        self.pin_btn.setEnabled(bool(self._pin_domain() and directory))
         self.pin_btn.setToolTip(
             f"Save {directory} as the download folder for {self._pin_domain()}"
             if self.pin_btn.isEnabled()
@@ -428,7 +434,7 @@ class MainWindow(QMainWindow):
         try:
             overrides.save_rules(overrides.rules_path(), rules)
         except OSError as e:
-            QMessageBox.warning(self, app.APP_TITLE, f"Yoink couldn't save the domain rules:\n{e}")
+            QMessageBox.warning(self, app.APP_TITLE, overrides.SAVE_ERROR.format(e))
             return
         self._load_rules()
         self._url_changed()
@@ -442,7 +448,7 @@ class MainWindow(QMainWindow):
             return
         # Empty follows the rule or config: no -P if either sets a home path, else Downloads.
         directory = self.dir_edit.text().strip()
-        if not (directory or self.config_defaults.sets_directory or self.rule.get("--paths")):
+        if not (directory or self.config_defaults.sets_directory or self.rule_dir):
             directory = argv.default_download_dir()
         if directory and not os.path.isdir(directory):
             QMessageBox.warning(self, app.APP_TITLE, f"Directory does not exist:\n{directory}")

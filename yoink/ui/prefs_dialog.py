@@ -80,10 +80,11 @@ def _missing(path: str) -> bool:
 class RuleDialog(QDialog):
     """Edits one domain rule (PHASE3.md 4). OK leaves the results in `domain` and `options`."""
 
-    def __init__(self, domain: str, options: dict[str, str | bool],
+    def __init__(self, domain: str, options: dict[str, str | bool], taken: set[str],
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(RULE_TITLE)
+        self.taken = taken  # the other rules' domains
         self.domain_edit = QLineEdit(domain, toolTip=DOMAIN_TIP)
         domain_row = QFormLayout()
         domain_row.addRow("Domain:", self.domain_edit)
@@ -106,6 +107,9 @@ class RuleDialog(QDialog):
         self.domain = overrides.normalize_domain(self.domain_edit.text())
         if not self.domain:
             QMessageBox.warning(self, RULE_TITLE, "Enter a domain, such as youtube.com.")
+            return
+        if self.domain in self.taken:
+            QMessageBox.warning(self, RULE_TITLE, f"A rule for {self.domain} already exists.")
             return
         if msg := self.form.validate():
             QMessageBox.warning(self, RULE_TITLE, msg)
@@ -315,7 +319,7 @@ class PrefsDialog(QDialog):
         self.rules_table.setRowCount(0)
         self.rules_table.setRowCount(len(self.rules))
         for row, domain in enumerate(sorted(self.rules)):
-            flags = " ".join(overrides.rule_argv(self.rules[domain]))
+            flags = " ".join(overrides.rule_lines(self.rules[domain]))
             settings = QTableWidgetItem(flags)
             settings.setToolTip(flags)
             self.rules_table.setItem(row, 0, QTableWidgetItem(domain))
@@ -330,11 +334,8 @@ class PrefsDialog(QDialog):
 
     def _edit_rule(self, domain: str) -> None:
         """Edit the rule for `domain`, or add one if it is ""."""
-        dialog = RuleDialog(domain, self.rules.get(domain, {}), self)
+        dialog = RuleDialog(domain, self.rules.get(domain, {}), self.rules.keys() - {domain}, self)
         if not dialog.exec():
-            return
-        if dialog.domain != domain and dialog.domain in self.rules:
-            QMessageBox.warning(self, TITLE, f"A rule for {dialog.domain} already exists.")
             return
         self.rules.pop(domain, None)
         self.rules[dialog.domain] = dialog.options
@@ -354,15 +355,17 @@ class PrefsDialog(QDialog):
         if msg := self.form.validate():
             QMessageBox.warning(self, TITLE, msg)
             return
-        if not self._save_config():
-            return
+        # Rules first: a failed rules write can be retried; a retried config write raises
+        # ConfigChanged.
         if self.rules != self.rules_setting:
             try:
                 overrides.save_rules(self.rules_path, self.rules)
             except OSError as e:
-                QMessageBox.warning(self, TITLE, f"Yoink couldn't save the domain rules:\n{e}")
+                QMessageBox.warning(self, TITLE, overrides.SAVE_ERROR.format(e))
                 return
             self.rules_written = True
+        if not self._save_config():
+            return
         if binary_path != self.binary_setting:
             self.settings.setValue(app.KEY_BINARY_PATH, binary_path)
             self.binary_changed = True

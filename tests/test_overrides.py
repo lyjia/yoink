@@ -1,7 +1,7 @@
 import pytest
 
 from yoink import overrides
-from yoink.overrides import load_rules, match, normalize_domain, rule_argv, save_rules
+from yoink.overrides import load_rules, match, normalize_domain, rule_argv, rule_lines, save_rules
 
 RULES = {"youtube.com": {}, "m.youtube.com": {}, "example.org": {}}
 
@@ -44,6 +44,28 @@ def test_load_malformed_file(tmp_path, caplog, text):
     assert "Ignoring" in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ({"youtube.com": "D:/v", "a.com": {}}, {"a.com": {}}),  # a rule that isn't an object
+        ({"youtube.com": {"--paths": "D:/v", "--limit-rate": 5}}, {"youtube.com": {"--paths": "D:/v"}}),
+        ({"": {"--paths": "D:/v"}, " . ": {}, "a.com": {}}, {"a.com": {}}),  # no domain
+    ],
+)
+def test_load_drops_invalid(tmp_path, caplog, data, expected):
+    path = tmp_path / "overrides.json"
+    save_rules(path, data)
+    assert load_rules(path) == expected
+    assert "Ignoring" in caplog.text
+
+
+def test_load_normalizes_domain(tmp_path, caplog):
+    path = tmp_path / "overrides.json"
+    save_rules(path, {"YouTube.com": {"--embed-subs": True}})
+    assert load_rules(path) == {"youtube.com": {"--embed-subs": True}}
+    assert not caplog.text
+
+
 def test_save_load_round_trip(tmp_path, monkeypatch):
     monkeypatch.setenv("YOINK_SETTINGS_DIR", str(tmp_path / "sandbox"))
     path = overrides.rules_path()
@@ -56,3 +78,8 @@ def test_save_load_round_trip(tmp_path, monkeypatch):
 def test_rule_argv():
     options = {"--paths": "D:/v", "--output": "", "--embed-subs": True, "--write-subs": False}
     assert rule_argv(options) == ["--paths", "D:/v", "--embed-subs"]
+
+
+def test_rule_lines():
+    assert rule_lines({"--paths": "D:/v", "--embed-subs": True, "--write-subs": False}) == [
+        "--paths D:/v", "--embed-subs"]
