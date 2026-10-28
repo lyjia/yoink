@@ -1,20 +1,99 @@
 """Locate the yt-dlp executable and tell how it was installed.
 
-Phase 0 looks only at an explicit override and PATH. Downloading a managed
-copy is Phase 4. The version and variant come from the config probe
-(ytdlp_config.py). See docs/DESIGN.md sections 6.3 and 6.4.
+Discovery checks the override, Yoink's managed copy, PATH, then well-known
+directories, and spots a copy that macOS quarantine blocks. The version and
+variant come from the config probe (ytdlp_config.py). See docs/PHASE4.md
+section 1 and docs/DESIGN.md sections 6.2 to 6.6.
 """
 
+import logging
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import QStandardPaths
+
+log = logging.getLogger(__name__)
+
+_EXECUTABLE = {"darwin": "yt-dlp_macos/yt-dlp_macos", "win32": "yt-dlp.exe"}
+# Finder-launched apps get launchd's PATH, which lacks these (DESIGN.md 6.2).
+_WELL_KNOWN = {
+    "darwin": ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "~/.local/bin"],
+    "win32": [r"%LOCALAPPDATA%\Microsoft\WinGet\Links", r"%USERPROFILE%\scoop\shims",
+              r"%ChocolateyInstall%\bin"],
+    "linux": ["/usr/local/bin", "~/.local/bin"],
+}
+
+
+def managed_path() -> Path:
+    """Where Yoink's own copy of yt-dlp lives, whether or not it is there."""
+    # Same branch as overrides.rules_path().
+    if d := os.environ.get("YOINK_SETTINGS_DIR"):
+        app_data = Path(d)
+    else:
+        loc = QStandardPaths.StandardLocation.AppDataLocation
+        app_data = Path(QStandardPaths.writableLocation(loc))
+    return app_data / "yt-dlp" / "current" / _EXECUTABLE.get(sys.platform, "yt-dlp_linux")
+
+
+def _well_known() -> list[str]:
+    dirs = (os.path.expandvars(os.path.expanduser(d))
+            for d in _WELL_KNOWN.get(sys.platform, _WELL_KNOWN["linux"]))
+    return [d for d in dirs if os.path.isdir(d)]
+
+
 def find_binary(override: str | None = None) -> Path | None:
-    """The configured path, even if nothing is there, else yt-dlp on PATH."""
+    """The configured path, even if nothing is there, else the first copy found."""
     if override:
         return Path(override).expanduser()
-    found = shutil.which("yt-dlp")
+    if managed_path().is_file():
+        return managed_path()
+    found = shutil.which("yt-dlp") or shutil.which("yt-dlp", path=os.pathsep.join(_well_known()))
     return Path(found) if found else None
+
+
+def candidates() -> list[Path]:
+    """Every copy of yt-dlp found, for the Preferences dropdown only: the managed copy, each
+    hit on PATH, then the well-known directories. Paths as found; duplicates (after resolving
+    links) dropped. find_binary does its own search, above."""
+    dirs = [*os.environ.get("PATH", "").split(os.pathsep), *_well_known()]
+    found = [managed_path()] if managed_path().is_file() else []
+    found += [Path(hit) for d in dirs if d and (hit := shutil.which("yt-dlp", path=d))]
+    unique: dict[Path, Path] = {}
+    for path in found:
+        unique.setdefault(path.resolve(), path)
+    return list(unique.values())
+
+
+def is_managed(path: Path | None) -> bool:
+    return path == managed_path()
+
+
+def install_root(path: Path) -> Path:
+    """The folder build's folder (the one with `_internal/`), else the single-file binary itself."""
+    return path.parent if (path.parent / "_internal").is_dir() else path
+
+
+def is_quarantined(path: Path) -> bool:
+    """Whether anything in the binary's install root (see install_root) has macOS quarantine."""
+    if sys.platform != "darwin":
+        return False
+    root = install_root(path)
+    try:
+        out = subprocess.run(["xattr", "-lr", str(root)], capture_output=True, text=True,
+                             errors="replace", timeout=10, check=True).stdout
+    except (OSError, subprocess.SubprocessError) as e:
+        log.warning("Couldn't check %s for quarantine: %s", root, e)
+        return False
+    return "com.apple.quarantine" in out
+
+
+def is_blocked(exited: bool, output: str, path: Path | None) -> bool:
+    """Whether a probe that crashed or timed out (`exited` False) with no output was Gatekeeper
+    killing a quarantined binary (DESIGN.md 6.6)."""
+    return not exited and not output.strip() and path is not None and is_quarantined(path)
 
 
 # yt-dlp reports "pip" for all of these; the resolved path tells them apart.

@@ -3,7 +3,7 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.12 (yoink-yt-dlp-gui)" />
   </component>
-  <component name="ProjectRootManager" version="2" languageLevel="JDK_27" project-jdk-name="~/src/python/yoink/.venv" project-jdk-type="Python SDK">
+  <component name="ProjectRootManager" version="2" languageLevel="JDK_27" project-jdk-name="Python 3.12 (Yoink)" project-jdk-type="Python SDK">
     <output url="file://$PROJECT_DIR$/out" />
   </component>
 </project>
