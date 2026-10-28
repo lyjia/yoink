@@ -6,6 +6,7 @@ See docs/DESIGN.md sections 2.2 and 2.3.
 """
 
 import os
+from collections.abc import Sequence
 
 from PySide6.QtCore import QStandardPaths
 
@@ -55,16 +56,22 @@ def default_download_dir() -> str:
         QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation))
 
 
-def build_argv(url: str, directory: str | None = None, cookies: str | None = None) -> list[str]:
+def build_argv(
+    url: str,
+    directory: str | None = None,
+    cookies: str | None = None,
+    extra: Sequence[str] = (),
+) -> list[str]:
     """Return the argument list (without the binary) for downloading `url`.
 
     `None` (or an empty directory) passes nothing for that setting, so the
     yt-dlp config decides. A directory is passed as `-P`. `cookies="none"`
     passes `--no-cookies-from-browser`; any other value is a browser name for
     `--cookies-from-browser`. Falling back to the Downloads folder when the
-    config sets no home path is the caller's job.
+    config sets no home path is the caller's job. `extra` (a domain rule's
+    options) goes first, so the overrides after it win.
     """
-    args: list[str] = []
+    args = list(extra)
     if directory:
         args += ["-P", directory]
     if cookies == "none":
