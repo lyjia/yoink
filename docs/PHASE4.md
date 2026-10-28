@@ -54,8 +54,8 @@ Decisions made while scoping, which change DESIGN.md sections 6.2, 6.5,
 `candidates() -> list[Path]`: every copy that steps 2 to 4 find, in that
 order, one `shutil.which` per directory. A copy reachable from two
 directories (the same directory twice, or a symlink) is listed once, under
-the path where it was first found. `find_binary` without an override
-returns the first.
+the path where it was first found. It feeds the Preferences dropdown only;
+`find_binary` keeps its own search.
 
 `managed_path() -> Path`: `<appdata>/yt-dlp/current/` joined with the
 platform's executable name: `yt-dlp_macos/yt-dlp_macos` on macOS (the
