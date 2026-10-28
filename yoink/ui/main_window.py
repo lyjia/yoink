@@ -102,6 +102,7 @@ class MainWindow(QMainWindow):
         self._probe: QProcess | None = None
         # Per-domain rules (docs/PHASE3.md section 5); `rule` matches the URL field.
         self._load_rules()
+        self.url_host: str | None = None
         self.rule_domain: str | None = None
         self.rule: dict[str, str | bool] = {}
 
@@ -131,6 +132,7 @@ class MainWindow(QMainWindow):
         self.dir_edit.textChanged.connect(self._overrides_changed)
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse)
+        self.pin_btn = self._tool_button(SP.SP_DialogSaveButton, "", self._pin)  # tip set below
         self.cookies_combo = QComboBox()
         # The first item's text grows once the probe reports; keep it unclipped.
         self.cookies_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
@@ -151,6 +153,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(QLabel("Save to:"), 0, 0)
         grid.addWidget(self.dir_edit, 0, 1)
         grid.addWidget(browse, 0, 2)
+        grid.addWidget(self.pin_btn, 0, 3)
         grid.addWidget(QLabel("Cookies:"), 1, 0)
         grid.addWidget(self.cookies_combo, 1, 1, Qt.AlignmentFlag.AlignLeft)
         grid.addWidget(self.reset_btn, 1, 2)
@@ -327,10 +330,10 @@ class MainWindow(QMainWindow):
     def _url_changed(self) -> None:
         text = self.url_edit.text().strip()
         try:  # yt-dlp accepts a URL without a scheme; so does the match
-            host = urlparse(text if "//" in text else "//" + text).hostname
+            self.url_host = urlparse(text if "//" in text else "//" + text).hostname
         except ValueError:  # say, an unclosed "[" in the host
-            host = None
-        self.rule_domain = overrides.match(host, self.rules)
+            self.url_host = None
+        self.rule_domain = overrides.match(self.url_host, self.rules)
         self.rule = self.rules[self.rule_domain] if self.rule_domain else {}
         self._refresh_defaults()
 
@@ -383,6 +386,12 @@ class MainWindow(QMainWindow):
             if cookies in PITFALLS:
                 tip += "\n" + PITFALLS[cookies]
         self.cookies_combo.setToolTip(tip)
+        self.pin_btn.setEnabled(bool(self.url_host and directory))
+        self.pin_btn.setToolTip(
+            f"Save {directory} as the download folder for {self._pin_domain()}"
+            if self.pin_btn.isEnabled()
+            else "Type or pick a folder and a URL to save it as that site's download folder."
+        )
 
     def reset_overrides(self) -> None:
         self.dir_edit.clear()
@@ -397,6 +406,32 @@ class MainWindow(QMainWindow):
         chosen = QFileDialog.getExistingDirectory(self, "Download directory", start)
         if chosen:
             self.dir_edit.setText(os.path.normpath(chosen))
+
+    def _pin_domain(self) -> str:
+        """The matched rule's domain, else the URL's (docs/PHASE3.md section 5)."""
+        return self.rule_domain or overrides.normalize_domain(self.url_host or "")
+
+    def _pin(self) -> None:
+        """Save the directory field as the URL's rule's --paths."""
+        domain, directory = self._pin_domain(), self.dir_edit.text().strip()
+        new = ytdlp_config.to_config_path(directory)
+        old = self.rules.get(domain, {}).get("--paths")
+        if old and old != new:
+            answer = QMessageBox.question(
+                self, app.APP_TITLE,
+                f"Replace the download folder for {domain}?\n\n"
+                f"{ytdlp_config.to_display_path(str(old))}\n→ {directory}")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        rules = dict(self.rules)
+        rules[domain] = {**rules.get(domain, {}), "--paths": new}
+        try:
+            overrides.save_rules(overrides.rules_path(), rules)
+        except OSError as e:
+            QMessageBox.warning(self, app.APP_TITLE, f"Yoink couldn't save the domain rules:\n{e}")
+            return
+        self._load_rules()
+        self._url_changed()
 
     def start_download(self) -> None:
         url = self.url_edit.text().strip()
