@@ -303,6 +303,7 @@ Status bar text:
 | State | Text |
 |-------|------|
 | No yt-dlp on PATH | "yt-dlp not found on PATH", and Download stays disabled |
+| The Preferences path has no file | "yt-dlp not found: <path>", and Download stays disabled. PATH is not tried. |
 | Probe running | "Checking yt-dlp…" |
 | Probe succeeded | "yt-dlp 2026.10.21 (pip)", or "yt-dlp unknown version" if the debug header can't be parsed |
 | Probe failed | "yt-dlp 2026.10.21 (pip), config: unknown", or "yt-dlp config: unknown" with no version |
@@ -428,7 +429,8 @@ Notes:
 
 Yoink looks in this order and stops at the first hit:
 
-1. The binary path set in Preferences.
+1. The binary path set in Preferences. It is used as given: if nothing is
+   there, the lookup fails rather than falling through to the steps below.
 2. The Yoink-managed copy, if there is one. It comes before PATH because
    the user chose it, possibly to get away from a blocked or stale copy on
    PATH (6.6).

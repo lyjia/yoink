@@ -228,8 +228,10 @@ class MainWindow(QMainWindow):
 
     def refresh_config(self) -> None:
         """Ask yt-dlp which configs it loads; the answer arrives in _probe_done."""
-        if not self.binary_path:
-            self.status_label.setText("yt-dlp not found on PATH")
+        if not (self.binary_path and self.binary_path.is_file()):
+            self.status_label.setText(
+                f"yt-dlp not found: {self.binary_path}" if self.binary_path else "yt-dlp not found on PATH")
+            self.status_label.setToolTip("Set the yt-dlp program in Preferences.")
             self.start_btn.setEnabled(False)
             return
         self.status_label.setText("Checking yt-dlp…")

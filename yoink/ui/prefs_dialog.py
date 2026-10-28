@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from yoink import app, binary
+from yoink import app, argv, binary
 from yoink.ytdlp_config import (
     BROWSERS,
     ConfigChanged,
@@ -144,6 +144,8 @@ BROWSER_TIPS = {
                "browser keeps its saved passwords. Leave empty to find it automatically.",
 }
 COOKIES_PATH_TIP = "The cookies file to use."
+# What an empty field means, for the options whose default is known (2.5).
+PLACEHOLDERS = {"--output": "%(title)s [%(id)s].%(ext)s", "--sub-langs": "en"}
 
 
 class _Field(NamedTuple):
@@ -154,6 +156,11 @@ class _Field(NamedTuple):
 
 def _value(line: Option | None) -> str:
     return (line.value or "") if line else ""
+
+
+def _missing(path: str) -> bool:
+    """A non-empty path with no file at it."""
+    return bool(path) and not Path(path).expanduser().is_file()
 
 
 def side_by_side(*widgets: QWidget, stretch: int | None = 0) -> QWidget:
@@ -229,8 +236,14 @@ class PrefsDialog(QDialog):
         self.binary_setting = self.settings.value(app.KEY_BINARY_PATH, "")
         self.binary_edit = QLineEdit(self.binary_setting, toolTip=BINARY_TIP)
         self.binary_edit.setClearButtonEnabled(True)
+        self.binary_edit.setPlaceholderText(
+            str(self.binary_path) if self.binary_path else "yt-dlp not found on PATH")
+        # A red border while the path points at nothing (a file deleted since it was set).
+        self.binary_edit.textChanged.connect(lambda text: self.binary_edit.setStyleSheet(
+            "border: 1px solid red" if _missing(text.strip()) else ""))
+        self.binary_edit.textChanged.emit(self.binary_edit.text())
         update = QPushButton("Update", toolTip=f"{UPDATE_TIP}\n{self.binary_path}")
-        update.setEnabled(self.binary_path is not None)
+        update.setEnabled(self.binary_path is not None and self.binary_path.is_file())
         update.clicked.connect(self._update)
         page = QWidget()
         form = QFormLayout(page)
@@ -294,12 +307,13 @@ class PrefsDialog(QDialog):
         groups = QVBoxLayout(content)
         forms: dict[str, QFormLayout] = {}
         self.fields: dict[str, _Field] = {}
+        placeholders = {"--paths": argv.default_download_dir(), **PLACEHOLDERS}
         for group, name, label, kind, tip in OPTIONS:
             if group not in forms:
                 box = QGroupBox(group)
                 forms[group] = QFormLayout(box)
                 groups.addWidget(box)
-            form_label, self.fields[name] = self._make_field(kind, label, tip)
+            form_label, self.fields[name] = self._make_field(kind, label, tip, placeholders.get(name, ""))
             forms[group].addRow(form_label, self.fields[name].row)
             if form_label:
                 forms[group].labelForField(self.fields[name].row).setToolTip(tip)
@@ -359,7 +373,8 @@ class PrefsDialog(QDialog):
             return path, config, MISMATCH
         return path, config, ""
 
-    def _make_field(self, kind: str | dict, label: str, tip: str) -> tuple[str, _Field]:
+    def _make_field(self, kind: str | dict, label: str, tip: str,
+                    placeholder: str = "") -> tuple[str, _Field]:
         """The form label and field for one row of OPTIONS."""
         if kind == "check":
             box = QCheckBox(label, toolTip=tip)
@@ -377,7 +392,7 @@ class PrefsDialog(QDialog):
             combo.activated.connect(lambda i: combo.setEditText(combo.itemData(i)))
             return label, _Field(combo, lambda: combo.currentText().strip(),
                                  lambda line: combo.setEditText(_value(line)))
-        edit = QLineEdit(toolTip=tip)
+        edit = QLineEdit(toolTip=tip, placeholderText=placeholder)
         if kind == "text":
             return label, _Field(edit, lambda: edit.text().strip(),
                                  lambda line: edit.setText(_value(line)))
@@ -466,7 +481,7 @@ class PrefsDialog(QDialog):
 
     def accept(self) -> None:
         binary_path = self.binary_edit.text().strip()
-        if binary_path and not Path(binary_path).expanduser().is_file():
+        if _missing(binary_path):
             QMessageBox.warning(self, TITLE, f"The yt-dlp program must be a file:\n{binary_path}")
             return
         if self.cookies_check.isChecked() and not self.cookies_edit.text().strip():

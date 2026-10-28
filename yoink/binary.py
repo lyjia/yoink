@@ -5,20 +5,14 @@ copy is Phase 4. The version and variant come from the config probe
 (ytdlp_config.py). See docs/DESIGN.md sections 6.3 and 6.4.
 """
 
-import logging
 import shutil
 import sys
 from pathlib import Path
 
-log = logging.getLogger(__name__)
-
-
 def find_binary(override: str | None = None) -> Path | None:
+    """The configured path, even if nothing is there, else yt-dlp on PATH."""
     if override:
-        p = Path(override).expanduser()
-        if p.is_file():
-            return p
-        log.warning("Configured yt-dlp path does not exist: %s", p)
+        return Path(override).expanduser()
     found = shutil.which("yt-dlp")
     return Path(found) if found else None
 

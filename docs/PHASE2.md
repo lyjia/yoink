@@ -367,8 +367,13 @@ A read-only box at the bottom of the yt-dlp page.
 
 - **yt-dlp program**: a line edit with **Browse…**, stored in the existing
   `KEY_BINARY_PATH`. Empty means `yt-dlp` on PATH, through
-  `binary.find_binary`. Save rejects a path that is not a file, with a
-  message.
+  `binary.find_binary`; the placeholder shows the binary in use. Save
+  rejects a path that is not a file, with a message. A set path is used as
+  given: if its file is gone, the field gets a red border, the status bar
+  says "yt-dlp not found: <path>", and PATH is not tried.
+- Download folder, File name, and Subtitle languages show what an empty
+  field means as a placeholder: the Downloads folder, yt-dlp's default
+  name template, and `en`.
 - **Update** sits next to the field and acts on the binary in use (3.3). Its
   tooltip names that binary's path.
 - When the path changes, the main window resolves the binary again and
