@@ -44,7 +44,8 @@ yoink/
   ui/
     main_window.py   URL input, override controls, downloads table and View menu (2.5)
     config_notice.py config override details dialog
-    prefs_dialog.py  preferences: page list with Yoink, yt-dlp (Phase 2), Domains (Phase 3)
+    prefs_dialog.py  preferences: page list with Yoink, yt-dlp, and Domains; rule editor (section 5)
+    options_form.py  yt-dlp option widgets, shared by the yt-dlp page and the rule editor
     log_view.py      per-job raw output viewer
 docs/DESIGN.md
 pyproject.toml
@@ -59,10 +60,12 @@ Dependencies: PySide6, requests (binary download only). Python 3.11+.
 |------------------------------|-----------------------------------------------------|
 | yt-dlp-native options        | yt-dlp user config file (section 3)                 |
 | Window geometry, main-window overrides (directory, cookies), downloads table layout, theme, binary path | QSettings (`Lyjia/Yoink`) |
-| Per-domain overrides         | `overrides.json` in Yoink's app-data dir            |
+| Per-domain rules             | `overrides.json` in `QStandardPaths.AppDataLocation`, or `YOINK_SETTINGS_DIR` when set |
 
-Per-domain rules are a list of structured records; QSettings handles those
-poorly, so they get a JSON file next to the QSettings store.
+Per-domain rules are structured records, which QSettings handles poorly, so
+they get a JSON file (section 5). It is in `QStandardPaths.AppDataLocation`
+(`%APPDATA%\Lyjia\Yoink` on Windows), or in `YOINK_SETTINGS_DIR` when that
+is set.
 
 The downloads table layout (column widths, order, and hidden columns) is
 the header state Qt saves, stored under
@@ -86,7 +89,7 @@ the config file before anything on the command line.
 
 ```
 yt-dlp
-  [domain override extra args]          # section 5
+  [domain rule options]                 # section 5
   [-P <dir>]                            # see 2.3
   [--cookies-from-browser <browser> | --no-cookies-from-browser]  # section 4
   --no-simulate --progress --newline --quiet
@@ -118,7 +121,7 @@ against the shipped binary during Phase 0.
 
 1. The directory field in the main window, if the user typed or picked
    one (an override).
-2. The matching domain rule's `destination`.
+2. The matching domain rule's `--paths`.
 3. A home path set by `--paths` / `-P` in any loaded config, where the value
    has no type prefix or includes `home`. Yoink passes no `-P` and lets
    yt-dlp resolve. The placeholder shows the path when all occurrences
@@ -338,52 +341,82 @@ under principle 2:
   **Config default**. A main-window override passes only the browser name.
 - The default is **Config default**, so a fresh install with an empty
   config loads no cookies (principle 5).
-- A per-domain rule may force cookies on or off (section 5).
+- A per-domain rule can set the browser, shown in the first item in place
+  of the config's value. It cannot turn cookies off (section 5).
 
 Known pitfalls to surface in the UI as a tooltip or one-line warning:
 Firefox must be closed or yt-dlp cannot open its locked cookie database;
 Chrome on Windows 127+ uses app-bound encryption and extraction may fail
 unless yt-dlp is current; Safari on macOS needs Full Disk Access. "Update yt-dlp" is one click away for that reason.
 
-## 5. Per-domain overrides (`overrides.json`)
+## 5. Per-domain rules (`overrides.json`)
 
-A rule matches a URL by host suffix: `youtube.com` matches `www.youtube.com`
-and `m.youtube.com`. Most specific suffix wins. One rule may carry any
-subset of:
+A rule is a set of yt-dlp options that applies to one domain. Rules use the
+options and widgets of the yt-dlp page (3.3) and are stored in
+`overrides.json` (2.1), a JSON object keyed by domain:
 
 ```json
 {
-  "domain": "youtube.com",
-  "destination": "/media/video/yt",
-  "cookies": "on" | "off" | null,
-  "extra_args": ["-f", "bv*[height<=1080]+ba", "--embed-subs"]
+  "youtube.com": {
+    "--paths": "D:/video/yt",
+    "--format": "bv*[height<=1080]+ba",
+    "--embed-subs": true
+  }
 }
 ```
 
+Each value is a string, or `true` for a bare flag. Unset options are
+omitted. Paths use forward slashes, as in the yt-dlp config (3.2).
+
+A rule matches a URL by host suffix: `youtube.com` matches
+`www.youtube.com` and `m.youtube.com`, but not `notyoutube.com`. The host
+is compared in lowercase, without its port. A URL without a scheme is
+matched as if it had one. The longest matching domain wins. Domains are
+stored in lowercase, without a leading `www.`.
+
 Resolution per download:
 
-1. yt-dlp config supplies defaults for everything.
-2. Matching domain rule's `extra_args` are appended, then its `destination`
-   as `-P`, then its `cookies` state if non-null.
+1. The yt-dlp config supplies defaults for everything.
+2. The matching rule's options come first on the command line (2.2), so
+   they replace the config's values. When the rule sets `--paths`, Yoink
+   does not pass the Downloads folder as `-P` (2.3).
 3. Main-window overrides are applied last: a non-empty directory field,
-   and a cookies combo not set to **Config default**. Reset clears them,
-   including a rule's prefilled destination, until the next URL is
-   entered.
+   and a cookies combo not set to its first item. Reset clears them and
+   leaves the rule in effect.
 
 UI:
 
-- The primary editor is the Domains page in Preferences: a flat table with
-  one row per domain and one column per supported override (domain,
-  destination, cookies, extra args). Add / edit / remove rows in place.
-  New override types become new columns.
-- When a URL is pasted or typed, Yoink resolves the host and fills the
-  directory field per section 2.3, showing the matched domain in a small
-  label next to the field.
-- Optional shorthand: a pin button next to the directory field saves the
-  current directory as the rule's `destination` for this host. It has a
-  tooltip stating exactly what it will write, and it asks for confirmation
-  before replacing a destination that already exists for that domain.
-  Creating a new rule needs no confirmation.
+- The editor is the Domains page in Preferences: a read-only table with
+  one row per rule, showing the domain and the rule's options as flags.
+  **Add…**, **Edit…**, and **Remove** change the list, and double-clicking
+  a row edits it. Save writes `overrides.json` only if the rules changed;
+  Cancel discards.
+- **Add…** and **Edit…** open a rule editor dialog (`RuleDialog`): a Domain
+  field above the yt-dlp page's widgets (`OptionsForm`). An empty widget
+  follows the yt-dlp config. A domain that another rule already has is
+  rejected.
+- A matching rule changes the defaults of the main-window controls. It
+  never writes into them, so a control's text is always the user's
+  override. The directory placeholder shows the rule's `--paths`, and the
+  cookies combo's first item shows the rule's `--cookies-from-browser`
+  value in place of the config's.
+- While a control shows a rule's default, it has a green border, and its
+  tooltip says "Default from the <domain> rule." Typing a folder, or
+  choosing another cookies item, clears the border. The border is a style
+  sheet, so the widget loses its native frame while it applies.
+- A label below the controls reads "Rule for <domain> applies", and is
+  hidden when no rule matches. Its tooltip lists the rule's flags, one per
+  line, because most options have no main-window control.
+- Optional shorthand: a pin button after **Browse…** saves the directory
+  field's text as the rule's `--paths` for this host, creating a rule if
+  none matches. Its tooltip states exactly what it will write, and it asks
+  for confirmation before replacing a different folder that the rule
+  already has. Creating a new rule needs no confirmation. The field keeps
+  its text, which stays an override until cleared.
+- A rule cannot force cookies off. An unchecked browser field in the rule
+  editor means "follow the config", so a rule can set a browser but not
+  remove one the config sets. The main window's **No cookies** item still
+  turns cookies off for one download.
 
 Not a goal: pattern matching beyond host suffix, per-URL-path rules, or
 rules that reference other rules.
@@ -803,9 +836,15 @@ Done; the status and deviations are at the top of PHASE2.md. Main-window
 table work (2.5), a theme setting (2.1), and the build script (section 7)
 landed in the same phase.
 
-**Phase 3: Per-domain overrides.**
-`overrides.py`, Domains page, URL-driven directory prefill, pin button,
-cookies override. `argv.py` grows the resolution order from section 5.
+**Phase 3: Per-domain rules.**
+`overrides.py`, and an option form (`ui/options_form.py`) split out of the
+yt-dlp page, so that a Domains page in Preferences can reuse it as a rule
+editor. In the main window, a matching rule sets the defaults of the
+directory and cookies controls, shown with a green border and a rule
+label, and a pin button saves the current folder to a rule. `argv.py`
+passes the rule's options ahead of the main-window overrides (2.2). Scope:
+[PHASE3.md](PHASE3.md). Done; the status and deviations are at the top of
+PHASE3.md.
 
 **Phase 4: Onboarding.**
 Decide the setup-flow options first (6.7). Then build:
@@ -844,8 +883,9 @@ retry failed, drag-and-drop URLs, system tray, CI builds.
   empty config (principle 5).
 - Yoink does not search for config files or work out precedence. yt-dlp
   reports what it loaded, and Yoink warns about conflicts (3.4).
-- Per-domain rules are edited in a flat table; the pin button is a
-  convenience with a tooltip and a confirmation on overwrite.
+- Per-domain rules are a table of domains with an editor that reuses the
+  yt-dlp page's widgets; the pin button is a convenience with a tooltip
+  and a confirmation on overwrite.
 - With no directory from the user, a rule, or the config, Yoink falls back to
   the OS Downloads folder (section 2.3).
 - The yt-dlp page is widgets plus a read-only list of the lines Yoink does

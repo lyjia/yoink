@@ -33,10 +33,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from yoink import __version__, app, argv, binary, ytdlp_config
+from yoink import __version__, app, argv, binary, overrides, ytdlp_config
 from yoink.job import DownloadJob, JobState, Progress
 from yoink.ui.config_notice import ConfigNoticeDialog
-from yoink.ui.prefs_dialog import PrefsDialog, side_by_side
+from yoink.ui.options_form import side_by_side
+from yoink.ui.prefs_dialog import PrefsDialog
 
 log = logging.getLogger(__name__)
 
@@ -100,6 +101,11 @@ class MainWindow(QMainWindow):
         self.config_defaults = ytdlp_config.config_defaults(None)
         self.variant = ""  # the build, from the probe's debug header
         self._probe: QProcess | None = None
+        # Per-domain rules (docs/PHASE3.md section 5); `rule` matches the URL field.
+        self._load_rules()
+        self.url_host: str | None = None
+        self.rule_domain: str | None = None
+        self.rule: dict[str, str | bool] = {}
 
         self.setWindowTitle(f"{app.APP_TITLE} {__version__}")
         self._build_ui()
@@ -115,25 +121,26 @@ class MainWindow(QMainWindow):
 
         self.url_edit = QLineEdit(placeholderText="URL")
         self.url_edit.returnPressed.connect(self.start_download)
+        self.url_edit.textChanged.connect(self._url_changed)
         self.start_btn = QPushButton("Download")
         self.start_btn.setDefault(True)
         self.start_btn.clicked.connect(self.start_download)
 
         # Override controls (docs/PHASE1.md section 2). Each one is empty or
         # "Config default" while following the yt-dlp config.
-        self.dir_edit = QLineEdit(placeholderText=argv.default_download_dir())
+        self.dir_edit = QLineEdit()  # placeholder set by _refresh_defaults
         self.dir_edit.setClearButtonEnabled(True)
         self.dir_edit.textChanged.connect(self._overrides_changed)
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse)
+        self.pin_btn = self._tool_button(SP.SP_DialogSaveButton, "", self._pin)  # tip set below
         self.cookies_combo = QComboBox()
         # The first item's text grows once the probe reports; keep it unclipped.
         self.cookies_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self.cookies_combo.addItem("", "")  # text set by _set_config_cookies
+        self.cookies_combo.addItem("", "")  # text set by _refresh_defaults
         self.cookies_combo.addItem("No cookies", "none")
         for b in ytdlp_config.BROWSERS:
             self.cookies_combo.addItem(b, b)
-        self._set_config_cookies(None)
         self.cookies_combo.currentIndexChanged.connect(self._overrides_changed)
         self.reset_btn = QPushButton("Reset")
         self.reset_btn.setToolTip("Clear main-window overrides and use the yt-dlp config")
@@ -147,13 +154,16 @@ class MainWindow(QMainWindow):
         grid.addWidget(QLabel("Save to:"), 0, 0)
         grid.addWidget(self.dir_edit, 0, 1)
         grid.addWidget(browse, 0, 2)
+        grid.addWidget(self.pin_btn, 0, 3)
         grid.addWidget(QLabel("Cookies:"), 1, 0)
         grid.addWidget(self.cookies_combo, 1, 1, Qt.AlignmentFlag.AlignLeft)
         grid.addWidget(self.reset_btn, 1, 2)
+        self.rule_label = QLabel()
+        grid.addWidget(self.rule_label, 2, 1, 1, 2)
 
         root.addLayout(url_row)
         root.addLayout(grid)
-        self._overrides_changed()
+        self._refresh_defaults()
 
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
@@ -271,11 +281,8 @@ class MainWindow(QMainWindow):
         self.loaded_configs = ytdlp_config.parse_probe(text) if exited else None
         if self.loaded_configs is None:
             log.warning("Config probe failed:\n%s", text.strip())
-        d = self.config_defaults = ytdlp_config.config_defaults(self.loaded_configs)
-        self._set_config_cookies(d.cookies)
-        fallback = "Set by yt-dlp config" if d.sets_directory else argv.default_download_dir()
-        self.dir_edit.setPlaceholderText(ytdlp_config.to_display_path(d.directory) or fallback)
-        self._overrides_changed()
+        self.config_defaults = ytdlp_config.config_defaults(self.loaded_configs)
+        self._refresh_defaults()
         self._set_conflicts(ytdlp_config.find_conflicts(self.loaded_configs or []))
 
         ver = ytdlp_config.parse_version(text)
@@ -312,25 +319,67 @@ class MainWindow(QMainWindow):
             self.refresh_config()
         if dialog.table_reset:
             self._set_header(self._default_header)
+        if dialog.rules_written:
+            self._load_rules()
+            self._url_changed()
 
     # ---- overrides --------------------------------------------------------
 
-    def _set_config_cookies(self, value: str | None) -> None:
-        """Label the first combo item with the config's cookies value, if known."""
-        self.cookies_combo.setItemText(0, f"Config default ({value})" if value else "Config default")
-        self.config_cookies = value
+    def _load_rules(self) -> None:
+        self.rules = overrides.load_rules(overrides.rules_path())
+
+    def _url_changed(self) -> None:
+        text = self.url_edit.text().strip()
+        try:  # yt-dlp accepts a URL without a scheme; so does the match
+            scheme = re.match(r"[a-z][a-z0-9+.-]*://|//", text, re.I)
+            self.url_host = urlparse(text if scheme else "//" + text).hostname
+        except ValueError:  # say, an unclosed "[" in the host
+            self.url_host = None
+        self.rule_domain = overrides.match(self.url_host, self.rules)
+        self.rule = self.rules[self.rule_domain] if self.rule_domain else {}
+        self._refresh_defaults()
+
+    @property
+    def rule_dir(self) -> str:
+        """The rule's home download folder, or ""."""
+        return ytdlp_config.home_path(str(self.rule.get("--paths") or "")) or ""
+
+    def _refresh_defaults(self) -> None:
+        """Show the defaults in effect: the URL's rule, else the config (docs/PHASE3.md section 5)."""
+        d = self.config_defaults
+        # The option takes a string; str() is for the typechecker.
+        rule_cookies = str(self.rule.get("--cookies-from-browser") or "")
+        directory = self.rule_dir or d.directory
+        fallback = "Set by yt-dlp config" if d.sets_directory else argv.default_download_dir()
+        self.dir_edit.setPlaceholderText(ytdlp_config.to_display_path(directory) or fallback)
+        # The cookies tooltip and pitfall text follow this, too.
+        self.config_cookies = rule_cookies or d.cookies
+        self.cookies_combo.setItemText(
+            0, f"Config default ({self.config_cookies})" if self.config_cookies else "Config default")
+        self.rule_label.setVisible(self.rule_domain is not None)
+        self.rule_label.setText(f"Rule for {self.rule_domain} applies")
+        self.rule_label.setToolTip("\n".join(overrides.rule_lines(self.rule)))
+        self._overrides_changed()
 
     def _overrides_changed(self) -> None:
         directory = self.dir_edit.text().strip()
         cookies = self.cookies_combo.currentData()
         self.reset_btn.setEnabled(bool(directory or cookies))
+        # A green border marks a rule's default while it is in effect.
+        rule_tip = f"Default from the {self.rule_domain} rule."
+        dir_from_rule = not directory and bool(self.rule_dir)
+        cookies_from_rule = not cookies and bool(self.rule.get("--cookies-from-browser"))
+        for widget, on in ((self.dir_edit, dir_from_rule), (self.cookies_combo, cookies_from_rule)):
+            # Scoped to the widget's class, so a combo's popup list keeps its own frame.
+            widget.setStyleSheet(f"{type(widget).__name__} {{ border: 2px solid green }}" if on else "")
+        overridden = f"the {self.rule_domain} rule" if self.rule_dir else "the yt-dlp config"
         self.dir_edit.setToolTip(
-            "Overriding the yt-dlp config. Clear the field to follow it."
+            f"Overriding {overridden}. Clear the field to follow it."
             if directory
-            else f"{FOLLOWING} Type or browse to override it."
+            else f"{rule_tip if dir_from_rule else FOLLOWING} Type or browse to override it."
         )
         if not cookies:
-            tip = FOLLOWING
+            tip = rule_tip if cookies_from_rule else FOLLOWING
             # The spec is BROWSER[+KEYRING][:PROFILE][::CONTAINER].
             if (spec := self.config_cookies) and spec != "none":
                 tip += f" It reads cookies from {spec}."
@@ -343,6 +392,12 @@ class MainWindow(QMainWindow):
             if cookies in PITFALLS:
                 tip += "\n" + PITFALLS[cookies]
         self.cookies_combo.setToolTip(tip)
+        self.pin_btn.setEnabled(bool(self._pin_domain() and directory))
+        self.pin_btn.setToolTip(
+            f"Save {directory} as the download folder for {self._pin_domain()}"
+            if self.pin_btn.isEnabled()
+            else "Type or pick a folder and a URL to save it as that site's download folder."
+        )
 
     def reset_overrides(self) -> None:
         self.dir_edit.clear()
@@ -358,6 +413,32 @@ class MainWindow(QMainWindow):
         if chosen:
             self.dir_edit.setText(os.path.normpath(chosen))
 
+    def _pin_domain(self) -> str:
+        """The matched rule's domain, else the URL's (docs/PHASE3.md section 5)."""
+        return self.rule_domain or overrides.normalize_domain(self.url_host or "")
+
+    def _pin(self) -> None:
+        """Save the directory field as the URL's rule's --paths."""
+        domain, directory = self._pin_domain(), self.dir_edit.text().strip()
+        new = ytdlp_config.to_config_path(directory)
+        old = self.rules.get(domain, {}).get("--paths")
+        if old and old != new:
+            answer = QMessageBox.question(
+                self, app.APP_TITLE,
+                f"Replace the download folder for {domain}?\n\n"
+                f"{ytdlp_config.to_display_path(str(old))}\n→ {directory}")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        rules = dict(self.rules)
+        rules[domain] = {**rules.get(domain, {}), "--paths": new}
+        try:
+            overrides.save_rules(overrides.rules_path(), rules)
+        except OSError as e:
+            QMessageBox.warning(self, app.APP_TITLE, overrides.SAVE_ERROR.format(e))
+            return
+        self._load_rules()
+        self._url_changed()
+
     def start_download(self) -> None:
         url = self.url_edit.text().strip()
         if not url or self._probe:  # Enter while probing; the button is disabled
@@ -365,16 +446,19 @@ class MainWindow(QMainWindow):
         if not self.binary_path:
             QMessageBox.warning(self, app.APP_TITLE, "yt-dlp was not found on PATH.")
             return
-        # Empty follows the config: no -P if it sets a home path, else Downloads.
+        # Empty follows the rule or config: no -P if either sets a home path, else Downloads.
         directory = self.dir_edit.text().strip()
-        if not directory and not self.config_defaults.sets_directory:
+        if not (directory or self.config_defaults.sets_directory or self.rule_dir):
             directory = argv.default_download_dir()
         if directory and not os.path.isdir(directory):
             QMessageBox.warning(self, app.APP_TITLE, f"Directory does not exist:\n{directory}")
             return
 
         cookies = self.cookies_combo.currentData() or None
-        job = DownloadJob(self.binary_path, argv.build_argv(url, directory, cookies), url, parent=self)
+        # self.rule already matches the URL: _url_changed runs on every edit.
+        extra = overrides.rule_argv(self.rule)
+        job = DownloadJob(
+            self.binary_path, argv.build_argv(url, directory, cookies, extra), url, parent=self)
         self._add_row(job)
         job.state_changed.connect(lambda s, j=job: self._on_state(j, s))
         job.file_named.connect(lambda f, j=job: self._set(j, C_FILE, os.path.basename(f)))

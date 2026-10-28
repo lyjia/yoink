@@ -29,6 +29,13 @@ def test_overrides_precede_fixed_flags(directory, cookies, expected):
         assert args.count(flag) == expected.count(flag)
 
 
+def test_extra_precedes_overrides():
+    extra = ["--embed-subs", "--paths", "D:/video"]
+    args = build_argv(URL, "/tmp/out", "chrome", extra)
+    assert args[:7] == extra + ["-P", "/tmp/out", "--cookies-from-browser", "chrome"]
+    assert args[7] == "--no-simulate"
+
+
 def test_quiet_kept():
     assert "--quiet" in build_argv(URL)
 

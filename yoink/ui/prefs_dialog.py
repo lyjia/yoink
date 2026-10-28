@@ -1,19 +1,15 @@
-"""Preferences: a page list with the Yoink and yt-dlp pages (docs/PHASE2.md section 2)."""
+"""Preferences: a page list with the Yoink, yt-dlp, and Domains pages (docs/PHASE2.md
+section 2, docs/PHASE3.md section 4)."""
 
-import os
-import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import NamedTuple
 
 from PySide6.QtCore import QProcess, QSettings, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
-    QCheckBox,
+    QAbstractItemView,
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -24,31 +20,27 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QScrollArea,
     QStackedWidget,
     QStyle,
     QStyleFactory,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from yoink import app, argv, binary
+from yoink import app, argv, binary, overrides
+from yoink.ui.options_form import PLACEHOLDERS, OptionsForm, browse_row, side_by_side
 from yoink.ytdlp_config import (
-    BROWSERS,
     ConfigChanged,
     ConfigFile,
     LoadedConfig,
-    Option,
     decode_output,
     default_config_path,
-    home_path,
-    join_cookie_spec,
     matches_probe,
     owned_lines,
     read_config,
     set_option,
-    split_cookie_spec,
-    to_config_path,
     to_display_path,
     unmanaged,
     write_config,
@@ -75,87 +67,9 @@ MISMATCH = ("Yoink reads this file differently from yt-dlp, so it can't edit it 
 NOT_LOADED = "yt-dlp doesn't load this file, so editing it would have no effect."
 KEPT = "Yoink doesn't manage these lines. They are kept as they are."
 
-FORMATS = {
-    "": "",
-    "1080p or lower": "bv*[height<=1080]+ba/b[height<=1080]",
-    "720p or lower": "bv*[height<=720]+ba/b[height<=720]",
-    "480p or lower": "bv*[height<=480]+ba/b[height<=480]",
-    "Audio only": "ba/b",
-}
-MERGE_FORMATS = {f: f for f in ("", "mp4", "mkv", "webm", "mov")}
-KEYRINGS = ["", "BASICTEXT", "GNOMEKEYRING", "KWALLET", "KWALLET5", "KWALLET6"]
-CHROMIUM = {"brave", "chrome", "chromium", "edge", "opera", "vivaldi", "whale"}
-
-# The option table (2.2, 2.3): group, option, label, widget kind, tooltip. A dict
-# kind is an editable combo of {item: value}; the other kinds are in _make_field.
-OPTIONS = [
-    ("Files", "--paths", "Download folder", "folder",
-     "The folder where videos are saved. Leave empty to save them in your Downloads folder. "
-     "The Save to field in the main window can still choose a different folder for one download."),
-    ("Files", "--output", "File name", "text",
-     "How downloaded files are named. Leave empty for the usual name: the video title followed "
-     "by its ID. Example: %(title)s.%(ext)s names each file after its video title only."),
-    ("Files", "--download-archive", "Download archive", "archive",
-     "Keeps a list of videos you already downloaded, so they are skipped next time. "
-     "Pick any file name; the file is created if it doesn't exist."),
-    ("Video", "--format", "Format", FORMATS,
-     "Which version of the video to download. Leave empty to get the best quality available. "
-     "Pick a preset, or type your own."),
-    ("Video", "--merge-output-format", "Merged file type", MERGE_FORMATS,
-     "The file type to use when the picture and sound are downloaded separately and joined. "
-     "Leave empty to choose automatically. MP4 plays almost everywhere."),
-    ("Video", "--embed-thumbnail", "Embed thumbnail", "check",
-     "Adds the video's thumbnail picture to the file, so it shows as cover art."),
-    ("Video", "--embed-metadata", "Embed metadata", "check",
-     "Adds details such as the title, uploader, and date to the file."),
-    ("Video", "--sponsorblock-remove", "Remove SponsorBlock segments", "text",
-     "Cuts sponsor messages and similar parts out of YouTube videos, using a list shared by "
-     "other viewers. Type the kinds of parts to cut, separated by commas. "
-     "Example: sponsor,selfpromo. Type all to cut every kind."),
-    ("Subtitles", "--write-subs", "Save subtitles", "check",
-     "Saves subtitles as separate files next to the video."),
-    ("Subtitles", "--embed-subs", "Embed subtitles", "check",
-     "Puts subtitles inside the video file, so video players can show them. "
-     "Works with MP4, MKV, and WebM files."),
-    ("Subtitles", "--sub-langs", "Subtitle languages", "text",
-     "Which subtitle languages to get, separated by commas. Example: en,es gets English and "
-     "Spanish. Type all for every language. Leave empty for English."),
-    ("Sign-in", "--cookies-from-browser", "Use cookies from browser", "browser",
-     "Uses your sign-in from a web browser, so you can download videos that need an account. "
-     "Turn it off to download without signing in."),
-    ("Sign-in", "--cookies", "Use cookies from a file", "cookies",
-     "Uses a cookies file saved from your browser, for videos that need an account. Most people "
-     "should use cookies from browser instead. Downloads also save updated cookies back to this "
-     "file, including any from the browser when both are on."),
-    ("Network", "--proxy", "Proxy", "text",
-     "Sends downloads through another server. Only needed if your network or a proxy service "
-     "requires it. Leave empty to connect directly. Example: socks5://127.0.0.1:1080"),
-    ("Network", "--limit-rate", "Speed limit", "text",
-     "Slows downloads so they use less of your internet connection. Leave empty for full speed. "
-     "Example: 5M means 5 megabytes per second."),
-]
-BROWSER_TIPS = {
-    "browser": "The browser you are signed in with.",
-    "profile": "The browser profile to use, if you have more than one. "
-               "Leave empty for the one you used most recently.",
-    "container": "Firefox only. The container tab to take your sign-in from. Leave empty to use "
-                 "all of them. Type none to use only tabs outside any container.",
-    "keyring": "Only used on Linux, with Chrome and similar browsers. Tells yt-dlp where the "
-               "browser keeps its saved passwords. Leave empty to find it automatically.",
-}
-COOKIES_PATH_TIP = "The cookies file to use."
-# What an empty field means, for the options whose default is known (2.5).
-PLACEHOLDERS = {"--output": "%(title)s [%(id)s].%(ext)s", "--sub-langs": "en"}
-
-
-class _Field(NamedTuple):
-    row: QWidget  # disabled as a whole when the option is repeated
-    get: Callable[[], str | bool]  # the value for set_option
-    set: Callable[[Option | None], None]  # show the option's line, or None
-
-
-def _value(line: Option | None) -> str:
-    return (line.value or "") if line else ""
+RULE_TITLE = "Domain rule"
+DOMAIN_TIP = ("A site name such as youtube.com. The rule also applies to its subdomains, "
+              "such as www.youtube.com.")
 
 
 def _missing(path: str) -> bool:
@@ -163,21 +77,50 @@ def _missing(path: str) -> bool:
     return bool(path) and not Path(path).expanduser().is_file()
 
 
-def side_by_side(*widgets: QWidget, stretch: int | None = 0) -> QWidget:
-    """Widgets side by side; widgets[stretch] takes the spare room, or nothing if None."""
-    row = QWidget()
-    layout = QHBoxLayout(row)
-    layout.setContentsMargins(0, 0, 0, 0)
-    for i, w in enumerate(widgets):
-        layout.addWidget(w, int(i == stretch))
-    if stretch is None:
-        layout.addStretch()
-    return row
+class RuleDialog(QDialog):
+    """Edits one domain rule (PHASE3.md 4). OK leaves the results in `domain` and `options`."""
+
+    def __init__(self, domain: str, options: dict[str, str | bool], taken: set[str],
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(RULE_TITLE)
+        self.taken = taken  # the other rules' domains
+        self.domain_edit = QLineEdit(domain, toolTip=DOMAIN_TIP)
+        domain_row = QFormLayout()
+        domain_row.addRow("Domain:", self.domain_edit)
+        domain_row.labelForField(self.domain_edit).setToolTip(DOMAIN_TIP)
+        self.form = OptionsForm()
+        self.form.load(options)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addLayout(domain_row)
+        layout.addWidget(QLabel("An empty setting follows the yt-dlp config.", wordWrap=True))
+        layout.addWidget(self.form, 1)
+        layout.addWidget(buttons)
+        self.resize(560, 640)
+
+    def accept(self) -> None:
+        self.domain = overrides.normalize_domain(self.domain_edit.text())
+        if not self.domain:
+            QMessageBox.warning(self, RULE_TITLE, "Enter a domain, such as youtube.com.")
+            return
+        if self.domain in self.taken:
+            QMessageBox.warning(self, RULE_TITLE, f"A rule for {self.domain} already exists.")
+            return
+        if msg := self.form.validate():
+            QMessageBox.warning(self, RULE_TITLE, msg)
+            return
+        self.options = {k: v for k, v in self.form.values().items() if v}
+        super().accept()
 
 
 class PrefsDialog(QDialog):
-    """Save writes what changed. The caller then reads `binary_changed` and
-    `config_written`, and `updated` and `table_reset`, which Cancel does not reset."""
+    """Save writes what changed. The caller then reads `binary_changed`, `config_written`,
+    and `rules_written`, and `updated` and `table_reset`, which Cancel does not reset."""
 
     def __init__(self, settings: QSettings, loaded: list[LoadedConfig] | None,
                  binary_path: Path | None, variant: str, parent: QWidget | None = None) -> None:
@@ -185,7 +128,8 @@ class PrefsDialog(QDialog):
         self.setWindowTitle(TITLE)
         self.settings = settings
         self.binary_path, self.variant = binary_path, variant  # the binary in use
-        self.binary_changed = self.config_written = self.updated = self.table_reset = False
+        self.binary_changed = self.config_written = self.rules_written = False
+        self.updated = self.table_reset = False
 
         self.page_list = QListWidget()
         self.page_list.setFixedWidth(120)
@@ -193,6 +137,7 @@ class PrefsDialog(QDialog):
         self.page_list.currentRowChanged.connect(self.stack.setCurrentIndex)
         self._add_page("Yoink", QStyle.StandardPixmap.SP_ComputerIcon, self._yoink_page())
         self._add_page("yt-dlp", QStyle.StandardPixmap.SP_FileIcon, self._ytdlp_page(loaded))
+        self._add_page("Domains", QStyle.StandardPixmap.SP_DriveNetIcon, self._domains_page())
         self.page_list.setCurrentRow(0)
 
         buttons = QDialogButtonBox(
@@ -212,24 +157,6 @@ class PrefsDialog(QDialog):
         QListWidgetItem(self.style().standardIcon(icon), name, self.page_list)
         self.stack.addWidget(page)
 
-    def _browse_row(self, edit: QLineEdit, kind: str = "file") -> QWidget:
-        """`edit` with a Browse… button for an existing file, a "folder", or an "archive"."""
-        def browse() -> None:
-            start = edit.text()
-            if kind == "folder":
-                chosen = QFileDialog.getExistingDirectory(self, "", start)
-            elif kind == "archive":  # the file need not exist yet
-                chosen = QFileDialog.getSaveFileName(
-                    self, "", start, options=QFileDialog.Option.DontConfirmOverwrite)[0]
-            else:
-                chosen = QFileDialog.getOpenFileName(self, "", start)[0]
-            if chosen:
-                edit.setText(os.path.normpath(chosen))
-
-        button = QPushButton("Browse…")
-        button.clicked.connect(browse)
-        return side_by_side(edit, button)
-
     # ---- Yoink page (2.5) -------------------------------------------------
 
     def _yoink_page(self) -> QWidget:
@@ -247,7 +174,7 @@ class PrefsDialog(QDialog):
         update.clicked.connect(self._update)
         page = QWidget()
         form = QFormLayout(page)
-        row = side_by_side(self._browse_row(self.binary_edit), update)
+        row = side_by_side(browse_row(self.binary_edit), update)
         form.addRow("yt-dlp program:", row)
         form.labelForField(row).setToolTip(BINARY_TIP)
         self.style_setting = self.settings.value(app.KEY_STYLE, "")
@@ -303,35 +230,19 @@ class PrefsDialog(QDialog):
     # ---- yt-dlp page (2.2 to 2.4) -----------------------------------------
 
     def _ytdlp_page(self, loaded: list[LoadedConfig] | None) -> QWidget:
-        content = QWidget()
-        groups = QVBoxLayout(content)
-        forms: dict[str, QFormLayout] = {}
-        self.fields: dict[str, _Field] = {}
-        placeholders = {"--paths": argv.default_download_dir(), **PLACEHOLDERS}
-        for group, name, label, kind, tip in OPTIONS:
-            if group not in forms:
-                box = QGroupBox(group)
-                forms[group] = QFormLayout(box)
-                groups.addWidget(box)
-            form_label, self.fields[name] = self._make_field(kind, label, tip, placeholders.get(name, ""))
-            forms[group].addRow(form_label, self.fields[name].row)
-            if form_label:
-                forms[group].labelForField(self.fields[name].row).setToolTip(tip)
-        groups.addStretch()
-        scroll = QScrollArea(widgetResizable=True)
-        scroll.setWidget(content)
-
+        self.form = OptionsForm({"--paths": argv.default_download_dir(), **PLACEHOLDERS})
         path, self.config, self.readonly = self._load(loaded)
         lines = self.config.lines if self.config else []
-        owned = owned_lines(lines, self.fields)
-        for name, field in self.fields.items():
-            field.set(owned[name][0] if len(owned[name]) == 1 else None)
+        owned = owned_lines(lines, self.form.fields)
+        self.form.load({name: True if o[0].value is None else o[0].value
+                        for name, o in owned.items() if len(o) == 1})
+        for name, field in self.form.fields.items():
             if len(owned[name]) > 1:
                 field.row.setEnabled(False)
                 for w in (field.row, *field.row.findChildren(QWidget)):
                     w.setToolTip(REPEATED_TIP)
-        self.baseline = {name: field.get() for name, field in self.fields.items()}
-        content.setEnabled(not self.readonly)
+        self.baseline = self.form.values()
+        self.form.widget().setEnabled(not self.readonly)
 
         # The warning box (2.4): the file, then every line no widget shows.
         path_label = QLabel(to_display_path(str(path)))
@@ -352,7 +263,7 @@ class PrefsDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(scroll, 1)
+        layout.addWidget(self.form, 1)
         layout.addWidget(warning)
         return page
 
@@ -373,109 +284,66 @@ class PrefsDialog(QDialog):
             return path, config, MISMATCH
         return path, config, ""
 
-    def _make_field(self, kind: str | dict, label: str, tip: str,
-                    placeholder: str = "") -> tuple[str, _Field]:
-        """The form label and field for one row of OPTIONS."""
-        if kind == "check":
-            box = QCheckBox(label, toolTip=tip)
-            return "", _Field(box, box.isChecked, lambda line: box.setChecked(line is not None))
-        if kind == "browser":
-            return "", self._browser_field(label, tip)
-        if kind == "cookies":
-            return "", self._cookies_file_field(label, tip)
-        if isinstance(kind, dict):
-            combo = QComboBox(editable=True, toolTip=tip)
-            combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-            for item, value in kind.items():
-                combo.addItem(item, value)
-            # A preset puts its value in the edit field, where it can be changed.
-            combo.activated.connect(lambda i: combo.setEditText(combo.itemData(i)))
-            return label, _Field(combo, lambda: combo.currentText().strip(),
-                                 lambda line: combo.setEditText(_value(line)))
-        edit = QLineEdit(toolTip=tip, placeholderText=placeholder)
-        if kind == "text":
-            return label, _Field(edit, lambda: edit.text().strip(),
-                                 lambda line: edit.setText(_value(line)))
-        # A folder or archive path: native in the widget, forward slashes in the config.
-        def set_(line: Option | None) -> None:
-            value = _value(line)
-            if kind == "folder":  # --paths: drop a "home:" prefix
-                value = home_path(value)
-            edit.setText(to_display_path(value))
+    # ---- Domains page (PHASE3.md 4) ---------------------------------------
 
-        return label, _Field(self._browse_row(edit, kind),
-                             lambda: to_config_path(edit.text().strip()), set_)
-
-    def _browser_field(self, label: str, tip: str) -> _Field:
-        check = QCheckBox(label, toolTip=tip)
-        browser = QComboBox(toolTip=BROWSER_TIPS["browser"])
-        browser.addItems(BROWSERS)
-        profile = QLineEdit(toolTip=BROWSER_TIPS["profile"])
-        container = QLineEdit(toolTip=BROWSER_TIPS["container"])
-        keyring = QComboBox(toolTip=BROWSER_TIPS["keyring"])
-        keyring.addItems(KEYRINGS)
-
-        def applies() -> tuple[bool, bool]:
-            """Whether the keyring and container fields apply to the chosen browser."""
-            name = browser.currentText()
-            return name in CHROMIUM and sys.platform.startswith("linux"), name == "firefox"
-
-        def update() -> None:
-            on, (has_keyring, has_container) = check.isChecked(), applies()
-            browser.setEnabled(on)
-            profile.setEnabled(on)
-            keyring.setEnabled(on and has_keyring)
-            container.setEnabled(on and has_container)
-
-        def get() -> str:
-            if not check.isChecked():
-                return ""
-            has_keyring, has_container = applies()  # a disabled field is left out
-            return join_cookie_spec(browser.currentText(),
-                                       keyring.currentText() if has_keyring else "",
-                                       profile.text().strip(),
-                                       container.text().strip() if has_container else "")
-
-        def set_(line: Option | None) -> None:
-            check.setChecked(line is not None)
-            if line:
-                name, ring, prof, cont = split_cookie_spec(_value(line))
-                browser.setCurrentIndex(max(browser.findText(name), 0))
-                keyring.setCurrentIndex(max(keyring.findText(ring), 0))
-                profile.setText(prof)
-                container.setText(cont)
-            update()
-
-        check.toggled.connect(update)
-        browser.currentIndexChanged.connect(update)
-        sub = QFormLayout()
-        sub.setContentsMargins(24, 0, 0, 0)
-        for text, widget in (("Profile:", profile), ("Container:", container), ("Keyring:", keyring)):
-            sub.addRow(text, widget)
-            sub.labelForField(widget).setToolTip(widget.toolTip())
-        row = QWidget()
-        layout = QVBoxLayout(row)
+    def _domains_page(self) -> QWidget:
+        self.rules_path = overrides.rules_path()
+        self.rules_setting = overrides.load_rules(self.rules_path)
+        self.rules = dict(self.rules_setting)  # an edit replaces a whole entry
+        table = self.rules_table = QTableWidget(0, 2, wordWrap=False)
+        table.setHorizontalHeaderLabels(["Domain", "Settings"])
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.verticalHeader().hide()
+        table.itemDoubleClicked.connect(lambda _: self._edit_rule(self._selected_rule()))
+        add, edit, remove = QPushButton("Add…"), QPushButton("Edit…"), QPushButton("Remove")
+        add.clicked.connect(lambda: self._edit_rule(""))
+        edit.clicked.connect(lambda: self._edit_rule(self._selected_rule()))
+        remove.clicked.connect(self._remove_rule)
+        for button in (edit, remove):
+            button.setEnabled(False)
+            table.itemSelectionChanged.connect(
+                lambda b=button: b.setEnabled(bool(self._selected_rule())))
+        self._fill_rules()
+        page = QWidget()
+        layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(side_by_side(check, browser, stretch=None))
-        layout.addLayout(sub)
-        return _Field(row, get, set_)
+        layout.addWidget(table, 1)
+        layout.addWidget(side_by_side(add, edit, remove, stretch=None))
+        return page
 
-    def _cookies_file_field(self, label: str, tip: str) -> _Field:
-        self.cookies_check = QCheckBox(label, toolTip=tip)
-        self.cookies_edit = QLineEdit(toolTip=COOKIES_PATH_TIP)
-        path_row = self._browse_row(self.cookies_edit)
-        path_row.setEnabled(False)
-        self.cookies_check.toggled.connect(path_row.setEnabled)
+    def _fill_rules(self, select: str = "") -> None:
+        """Show `rules`, sorted by domain, with the `select` row selected."""
+        self.rules_table.setRowCount(0)
+        self.rules_table.setRowCount(len(self.rules))
+        for row, domain in enumerate(sorted(self.rules)):
+            flags = " ".join(overrides.rule_lines(self.rules[domain]))
+            settings = QTableWidgetItem(flags)
+            settings.setToolTip(flags)
+            self.rules_table.setItem(row, 0, QTableWidgetItem(domain))
+            self.rules_table.setItem(row, 1, settings)
+            if domain == select:
+                self.rules_table.selectRow(row)
 
-        def get() -> str:
-            checked = self.cookies_check.isChecked()
-            return to_config_path(self.cookies_edit.text().strip()) if checked else ""
+    def _selected_rule(self) -> str:
+        """The selected row's domain, or ""."""
+        rows = self.rules_table.selectionModel().selectedRows()
+        return self.rules_table.item(rows[0].row(), 0).text() if rows else ""
 
-        def set_(line: Option | None) -> None:
-            self.cookies_check.setChecked(line is not None)
-            self.cookies_edit.setText(to_display_path(_value(line)))
+    def _edit_rule(self, domain: str) -> None:
+        """Edit the rule for `domain`, or add one if it is ""."""
+        dialog = RuleDialog(domain, self.rules.get(domain, {}), self.rules.keys() - {domain}, self)
+        if not dialog.exec():
+            return
+        self.rules.pop(domain, None)
+        self.rules[dialog.domain] = dialog.options
+        self._fill_rules(dialog.domain)
 
-        return _Field(side_by_side(self.cookies_check, path_row, stretch=1), get, set_)
+    def _remove_rule(self) -> None:
+        del self.rules[self._selected_rule()]
+        self._fill_rules()
 
     # ---- saving -----------------------------------------------------------
 
@@ -484,10 +352,18 @@ class PrefsDialog(QDialog):
         if _missing(binary_path):
             QMessageBox.warning(self, TITLE, f"The yt-dlp program must be a file:\n{binary_path}")
             return
-        if self.cookies_check.isChecked() and not self.cookies_edit.text().strip():
-            QMessageBox.warning(self, TITLE, "Choose a cookies file, or turn off "
-                                             "Use cookies from a file.")
+        if msg := self.form.validate():
+            QMessageBox.warning(self, TITLE, msg)
             return
+        # Rules first: a failed rules write can be retried; a retried config write raises
+        # ConfigChanged.
+        if self.rules != self.rules_setting:
+            try:
+                overrides.save_rules(self.rules_path, self.rules)
+            except OSError as e:
+                QMessageBox.warning(self, TITLE, overrides.SAVE_ERROR.format(e))
+                return
+            self.rules_written = True
         if not self._save_config():
             return
         if binary_path != self.binary_setting:
@@ -500,8 +376,8 @@ class PrefsDialog(QDialog):
 
     def _save_config(self) -> bool:
         """Write the changed yt-dlp options, if any; False if the dialog should stay open."""
-        changed = {name: value for name, field in self.fields.items()
-                   if (value := field.get()) != self.baseline[name]}
+        changed = {name: value for name, value in self.form.values().items()
+                   if value != self.baseline[name]}
         if self.readonly or self.config is None or not changed:
             return True
         lines = self.config.lines
