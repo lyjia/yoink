@@ -23,8 +23,15 @@ Decisions made while scoping:
   point and gains a `--release` flag that zips the result and names it
   with the version. No separate release script, no CI. Builds are made by
   hand on each OS until CI builds leave the backlog.
-- **The version lives in `pyproject.toml` only.** Bumping it is a commit;
-  the tag matches it. No version derived from git, no version file.
+- **The version comes from git tags**, in YAAMT's scheme: `M.m.p` on a
+  clean `v*.*.*` tag, `M.m.p+N.<hash>` N commits past it, `.dirty` with
+  uncommitted changes, `0.0.0+N.<hash>` with no tag reachable.
+  `pyproject.toml` declares `version` as dynamic and the build backend
+  computes it from the tag, so pyproject reflects the latest tag without a
+  bump commit. `uv-dynamic-versioning` (a hatchling plugin over dunamai)
+  does this with a format string; `yoink.__version__` keeps reading
+  `importlib.metadata`, which Nuitka's `--include-distribution-metadata`
+  already ships. The only new code is a few lines of pyproject.
 - **Nuitka stays on `app-dist`**, not `onefile`, on every OS, for the
   startup reason in DESIGN.md section 7. The Windows and Linux artifact is
   a zip of the folder; the macOS artifact is a zip of the `.app`.
@@ -40,9 +47,11 @@ Decisions made while scoping:
 
 `--release` is consumed by the script, not passed to Nuitka. It:
 
-1. Reads the version from `pyproject.toml` with a one-line `sed`, and
-   refuses to run if the working tree is dirty or `HEAD` is not tagged
-   `v<version>`. This keeps the artifact and the tag in step.
+1. Runs `uv sync` so the installed metadata is recomputed from the
+   current commit, reads the version with
+   `uv run python -c "import yoink; print(yoink.__version__)"`, and
+   refuses to run unless it is a bare `M.m.p` (clean tree, on a tag).
+   This is YAAMT's publish check, done locally.
 2. Runs the existing Nuitka command. Windows keeps
    `--windows-console-mode=attach`: it opens no console when launched from
    Explorer, and shows logs when launched from a terminal, which is what a
@@ -92,6 +101,7 @@ last 20 lines stays; the dialog is the full version.
 
 | File | Change | Lines (approx.) |
 |------|--------|-----------------|
+| `pyproject.toml` | hatchling + `uv-dynamic-versioning`, format string | 10 |
 | `scripts/build.sh` | `--release`: version check, zip | 30 |
 | `yoink/job.py` | `log_line` signal | 4 |
 | `yoink/ui/log_dialog.py` (new) | section 2 | 60 |
@@ -135,9 +145,10 @@ Done when `uv run pytest` passes, a double-click on a running sandbox
 download opens a dialog that fills in as yt-dlp prints, and the same on a
 failed row shows the `ERROR:` line.
 
-### T2. Release build (~30 lines)
+### T2. Versioning and release build (~40 lines)
 
-- Section 1.
+- Section 1, and the pyproject change. Verify `yoink.__version__` on a
+  tag, one commit past it, and with a dirty tree.
 
 Done when `scripts/build.sh --release` refuses on a dirty tree or an
 untagged `HEAD`, and on a tagged commit produces the named zip on this
@@ -146,8 +157,8 @@ downloads the managed yt-dlp.
 
 ### T3. Docs and release
 
-- Section 3, then bump `pyproject.toml` to `0.1.0`, tag `v0.1.0`, build
-  on each OS, and publish the release with the three zips.
+- Section 3, then tag `v0.1.0`, build on each OS, and publish the
+  release with the three zips.
 
 ### Phase 5 exit check
 
