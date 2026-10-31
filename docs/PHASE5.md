@@ -8,7 +8,7 @@ Implemented on branch `phase-5-distribution`; release not yet tagged.
 |------|--------|
 | Scope | `2e9569b` to `c150980` |
 | T1 | `7edfe25`, `6de216c` |
-| T2 | This commit. Docs only; tag and release pending. |
+| T2 | `626a092` Docs only; tag and release pending. |
 
 Changed or added during implementation:
 
