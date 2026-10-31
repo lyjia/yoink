@@ -866,13 +866,44 @@ blocked copy, a new user gets from first launch to a working download
 without opening Terminal or System Settings.
 
 **Phase 5: Distribution.**
-Nuitka build scripts, macOS signing and notarization or documented "Open
-Anyway" steps (section 7), a log viewer on row double-click, first tagged
-release.
+Git-tag versioning, a release mode for the Nuitka build script, documented
+"Open Anyway" steps for macOS (section 7), first tagged release. Scope:
+[PHASE5.md](PHASE5.md).
 
 **Backlog, unscheduled.**
-Concurrency limit and queue, playlist entries as child rows, clipboard watch,
-retry failed, drag-and-drop URLs, system tray, CI builds.
+
+- **Log viewer.** Double-clicking a row opens the full yt-dlp output for
+  that job, updating while it runs. For diagnosing a failed download
+  beyond the last-20-lines tooltip, and for pasting into a bug report,
+  without launching Yoink from a terminal.
+- **Concurrency limit and queue.** A Preferences setting for how many
+  downloads run at once; further jobs wait as `queued`. For pasting a
+  batch of URLs without saturating the connection or tripping a site's
+  rate limit.
+- **Playlist entries as child rows.** A playlist URL shows one parent row
+  with each entry nested under it, instead of one row whose filename
+  changes as entries complete (section 2.4). For seeing which entries
+  failed and opening individual files.
+- **Clipboard watch.** When enabled, a URL copied to the clipboard is
+  pasted into the URL field, or started outright. For a browse-and-grab
+  session where every copy is meant for Yoink.
+- **Retry failed.** A button on a failed row that starts the same URL
+  with the same options again. For transient network errors and sites
+  that fail on the first attempt, without re-pasting the URL.
+- **Drag-and-drop URLs.** Dropping a link from a browser onto the window
+  starts a download. For users who do not want to copy and paste.
+- **System tray.** Minimise to the tray with a progress indicator and a
+  notification when a download finishes. For long downloads started and
+  left alone.
+- **CI builds.** A GitHub Actions matrix that builds and uploads the
+  three release artifacts on a tag push, as YAAMT's `release.yml` does.
+  For releasing without a machine of each OS to hand; also the point at
+  which signing secrets would live.
+- **Signing and notarization.** A Developer ID certificate and
+  `notarytool` in the release build, so macOS opens Yoink without the
+  "Open Anyway" steps (section 7). Needs an Apple Developer Program
+  membership.
+- **App icon.** Replace Nuitka's default Python icon. Needs artwork.
 
 ## 9. Resolved questions
 

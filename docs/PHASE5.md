@@ -7,9 +7,8 @@ Not started. Branch `phase-5-distribution`.
 Source: [DESIGN.md](DESIGN.md) section 8, Phase 5, plus section 7.
 
 Deliverable: a tagged release on GitHub with a downloadable build for
-Windows, macOS, and Linux, release notes that get a Mac user past
-Gatekeeper, and a log viewer so a failed download can be diagnosed without
-a terminal.
+Windows, macOS, and Linux, and release notes that get a Mac user past
+Gatekeeper.
 
 Decisions made while scoping:
 
@@ -42,10 +41,8 @@ Decisions made while scoping:
 - **Nuitka stays on `app-dist`**, not `onefile`, on every OS, for the
   startup reason in DESIGN.md section 7. The Windows and Linux artifact is
   a zip of the folder; the macOS artifact is a zip of the `.app`.
-- **The log viewer is a dialog, not a panel.** Double-clicking a row opens
-  a read-only text view of the yt-dlp output for that job. It updates
-  live while the job runs. No filtering, search, or saving; Ctrl+A and
-  copy cover the "send me the log" case.
+- **No log viewer.** DESIGN.md listed one for this phase; it is moved to
+  the backlog so the phase is release machinery only.
 - **No app icon yet.** Nuitka's default (the Python icon) ships in the
   first release. An icon is a separate, small follow-up once there is
   artwork.
@@ -72,29 +69,7 @@ Decisions made while scoping:
 
 The test build path (no flag) is unchanged.
 
-## 2. Log viewer (`yoink/ui/log_dialog.py`, new)
-
-`DownloadJob` gains `log_line = Signal(str)`, emitted from the two places
-`_handle_line` appends to `self.log`. Protocol lines (progress, metadata)
-are not logged, as today; the viewer shows what yt-dlp printed.
-
-`LogDialog(job, parent)`:
-
-- Title: the job's title if metadata has arrived, else the URL.
-- A read-only `QPlainTextEdit` in a monospace font, seeded with the
-  command line (`binary` and `argv`, shell-quoted on one line) and the
-  current `job.log`, then appended to from `log_line`. Scrolls to the
-  bottom on append only if it was already at the bottom.
-- A Copy button that puts the whole text on the clipboard, and Close.
-- `WA_DeleteOnClose`; opening the same row twice opens a second dialog,
-  which is fine.
-
-`MainWindow` connects `table.itemDoubleClicked` (and `cellDoubleClicked`
-for cells holding a widget, the progress bar and action buttons) to open
-the dialog for `self.jobs[row]`. The failed-row tooltip that shows the
-last 20 lines stays; the dialog is the full version.
-
-## 3. Release notes and README
+## 2. Release notes and README
 
 - `README.md`: a "Download" section pointing at the Releases page, the
   macOS "Open Anyway" steps (right-click > Open, or Privacy & Security >
@@ -105,59 +80,38 @@ last 20 lines stays; the dialog is the full version.
 - DESIGN.md section 7: replace "Release builds and CI builds are backlog"
   with the `--release` flag and leave CI in the backlog.
 
-## 4. Work items
+## 3. Work items
 
 | File | Change | Lines (approx.) |
 |------|--------|-----------------|
 | `pyproject.toml` | hatchling, `uv-dynamic-versioning`, format, cache keys | 12 |
 | `yoink/__init__.py`, `main_window.py` | `FROZEN`, About suffix | 5 |
 | `scripts/build.sh` | sync, `--release`: version check, zip | 30 |
-| `yoink/job.py` | `log_line` signal | 4 |
-| `yoink/ui/log_dialog.py` (new) | section 2 | 60 |
-| `yoink/ui/main_window.py` | double-click handler | 10 |
-| `README.md`, `docs/DESIGN.md` | section 3 | docs |
+| `README.md`, `docs/DESIGN.md` | section 2 | docs |
 
-Total: about 110 new lines of application code.
+Total: about 50 new lines.
 
 ### Tests
 
-- `tests/test_job.py` (new, ~20 lines): feeding a non-protocol line emits
-  `log_line` and appends to `log`; a protocol line does neither.
 - The version format is checked by hand in T2: `uv sync` then
   `__version__` on a tag, one commit past it, and with a dirty tree. It
   is the plugin's logic, not ours.
 - The dialog and the build script are checked by hand (section 6).
 
-## 5. Out of scope
+## 4. Out of scope
 
 - Signing, notarization, and an Apple Developer account.
 - CI builds and automatic release publishing (backlog).
 - `onefile` builds, installers (MSI, DMG, AppImage, deb).
 - An app icon.
 - Auto-update of Yoink itself.
-- Log search, filtering, persistence across restarts, or a "save log"
-  button.
+- The log viewer (backlog).
 
-## 6. Tasks
+## 5. Tasks
 
-Each task is one commit and leaves the app runnable. T1 and T2 are
-independent; T3 follows both.
+Each task is one commit and leaves the app runnable. T2 follows T1.
 
-```
-T1 ─┐
-    ├── T3
-T2 ─┘
-```
-
-### T1. Log viewer (~75 lines, tests ~20)
-
-- Section 2.
-
-Done when `uv run pytest` passes, a double-click on a running sandbox
-download opens a dialog that fills in as yt-dlp prints, and the same on a
-failed row shows the `ERROR:` line.
-
-### T2. Versioning and release build (~45 lines)
+### T1. Versioning and release build (~45 lines)
 
 - Section 1, the pyproject change, `FROZEN`, and the About suffix.
 
@@ -166,9 +120,9 @@ untagged `HEAD`, and on a tagged commit produces the named zip on this
 machine. On macOS, the unzipped `.app` launches after "Open Anyway" and
 downloads the managed yt-dlp.
 
-### T3. Docs and release
+### T2. Docs and release
 
-- Section 3, then tag `v0.1.0`, build on each OS, and publish the
+- Section 2, then tag `v0.1.0`, build on each OS, and publish the
   release with the three zips.
 
 ### Phase 5 exit check
