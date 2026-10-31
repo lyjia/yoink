@@ -904,6 +904,17 @@ Git-tag versioning, a release mode for the Nuitka build script, documented
   "Open Anyway" steps (section 7). Needs an Apple Developer Program
   membership.
 - **App icon.** Replace Nuitka's default Python icon. Needs artwork.
+- **"Yoink here" in the file manager.** A right-click entry on a folder in
+  Explorer, Finder, or the Linux file manager that opens Yoink with the
+  directory field set to that folder, or, if Yoink is already running,
+  sets the field in the open window. For a user who already has the
+  destination folder open and wants to paste a URL into it. Open
+  question: how this interacts with a per-domain rule or config `-P`
+  that also sets the destination; it probably needs a one-shot override
+  that outranks both, shown with the existing overrides indicator.
+  Needs a registry entry on Windows, a Finder extension or Automator
+  quick action on macOS, and single-instance IPC for the running-window
+  case.
 
 ## 9. Resolved questions
 
@@ -923,21 +934,3 @@ Git-tag versioning, a release mode for the Nuitka build script, documented
   not manage, with no raw text editor. Only a widget can apply the path rule
   in 3.2: a raw editor would show and accept backslash paths that yt-dlp's
   POSIX tokenizer silently mangles.
-
-## 10. Feature wishlist
-
-Ideas without a design yet. The backlog in section 8 holds features that
-are understood and only unscheduled; an entry moves there once its open
-questions are settled.
-
-- **"Yoink here" in the file manager.** A right-click entry on a folder in
-  Explorer, Finder, or the Linux file manager that opens Yoink with the
-  directory field set to that folder, or, if Yoink is already running,
-  sets the field in the open window. For a user who already has the
-  destination folder open and wants to paste a URL into it. Open
-  question: how this interacts with a per-domain rule or config `-P`
-  that also sets the destination; it probably needs a one-shot override
-  that outranks both, shown with the existing overrides indicator.
-  Needs a registry entry on Windows, a Finder extension or Automator
-  quick action on macOS, and single-instance IPC for the running-window
-  case.
