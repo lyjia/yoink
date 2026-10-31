@@ -23,25 +23,22 @@ Decisions made while scoping:
   point and gains a `--release` flag that zips the result and names it
   with the version. No separate release script, no CI. Builds are made by
   hand on each OS until CI builds leave the backlog.
-- **Versioning is YAAMT's, code and scheme.** `yoink/version.py` is
-  YAAMT's `src/util/version.py` with its logging import swapped for
-  `logging.getLogger`: `M.m.p` on a clean `v*.*.*` tag, `M.m.p+N.<hash>`
-  N commits past it, `.dirty` with uncommitted changes, `0.0.0+N.<hash>`
-  with no tag reachable, `0.0.0` without git. A source checkout runs
-  `git describe` at startup; a frozen build reads a stamped constant.
-  Keeping the file identical to YAAMT's is deliberate, so the two can be
-  merged into one module later. `importlib.metadata` and
-  `--include-distribution-metadata` go away.
-- **The stamp is a generated file, not a patched source.** `build.sh`
-  writes `yoink/_version.py` containing `VERSION_STRING = "..."` before
-  Nuitka runs and deletes it after; the file is gitignored.
-  `version.py` does `from yoink._version import VERSION_STRING` inside a
-  `try`, falling back to git. No temp workspace copy as in YAAMT.
-- **pyproject follows the tag** through setuptools' dynamic version:
-  `dynamic = ["version"]` and
-  `[tool.setuptools.dynamic] version = {attr = "yoink.version.__version__"}`.
-  setuptools imports the module at build time, which runs the same
-  `git describe`. No plugin, no bump commit.
+- **The version comes from git tags via `uv-dynamic-versioning`**, in
+  YAAMT's scheme: `M.m.p` on a clean `v*.*.*` tag, `M.m.p+N.<hash>` N
+  commits past it, `.dirty` with uncommitted changes, `0.0.0+N.<hash>`
+  with no tag reachable. The plugin (hatchling plus dunamai) renders that
+  from a format string in pyproject at install and build time, so
+  pyproject follows the tag with no bump commit and no version code of
+  our own. The build backend moves from setuptools to hatchling.
+  `yoink.__version__` keeps reading `importlib.metadata`, which Nuitka's
+  `--include-distribution-metadata` already ships. `[tool.uv]
+  cache-keys` on commit and tags makes `uv sync` recompute it. A dirty
+  tree is not a cache key, so `.dirty` in a source run reflects the last
+  sync; accepted.
+- **About says when Yoink runs from source.** `yoink.FROZEN` is
+  `"__compiled__" in globals()`, which Nuitka sets in compiled modules.
+  When false, About reads `Yoink 0.1.0+3.abc1234 (running from source)`.
+  The startup log line gets the same suffix.
 - **Nuitka stays on `app-dist`**, not `onefile`, on every OS, for the
   startup reason in DESIGN.md section 7. The Windows and Linux artifact is
   a zip of the folder; the macOS artifact is a zip of the `.app`.
@@ -57,13 +54,13 @@ Decisions made while scoping:
 
 `--release` is consumed by the script, not passed to Nuitka. It:
 
-1. Reads the version with `uv run python -m yoink.version` and refuses
-   to run unless it is a bare `M.m.p` (clean tree, on a tag). This is
-   YAAMT's publish check, done locally.
-2. Writes `yoink/_version.py`, runs the existing Nuitka command without
-   `--include-distribution-metadata`, and removes the file in a `trap`
-   so a failed build does not leave a stale stamp behind. The test build
-   writes the stamp too, so `dist/` builds report their commit. Windows keeps
+1. Runs `uv sync` so the installed metadata matches the current commit,
+   reads the version with
+   `uv run python -c "import yoink; print(yoink.__version__)"`, and
+   refuses to run unless it is a bare `M.m.p` (clean tree, on a tag).
+   This is YAAMT's publish check, done locally.
+2. Runs the existing Nuitka command. The test build also runs `uv sync`
+   first, so `dist/` builds report their commit. Windows keeps
    `--windows-console-mode=attach`: it opens no console when launched from
    Explorer, and shows logs when launched from a terminal, which is what a
    bug report needs.
@@ -112,24 +109,23 @@ last 20 lines stays; the dialog is the full version.
 
 | File | Change | Lines (approx.) |
 |------|--------|-----------------|
-| `yoink/version.py` (new) | YAAMT's module, `__version__` | 120 |
-| `yoink/__init__.py`, `pyproject.toml`, `.gitignore` | dynamic version, stamp file | 10 |
-| `scripts/build.sh` | stamp, `--release`: version check, zip | 35 |
+| `pyproject.toml` | hatchling, `uv-dynamic-versioning`, format, cache keys | 12 |
+| `yoink/__init__.py`, `main_window.py` | `FROZEN`, About suffix | 5 |
+| `scripts/build.sh` | sync, `--release`: version check, zip | 30 |
 | `yoink/job.py` | `log_line` signal | 4 |
 | `yoink/ui/log_dialog.py` (new) | section 2 | 60 |
 | `yoink/ui/main_window.py` | double-click handler | 10 |
 | `README.md`, `docs/DESIGN.md` | section 3 | docs |
 
-Total: about 200 new lines, 120 of them copied from YAAMT.
+Total: about 110 new lines of application code.
 
 ### Tests
 
 - `tests/test_job.py` (new, ~20 lines): feeding a non-protocol line emits
   `log_line` and appends to `log`; a protocol line does neither.
-- `tests/test_version.py` (~40 lines): the describe-output formats
-  (clean tag, past tag, dirty, untagged, no git), using a `git init`
-  tempdir rather than mocking subprocess, and the stamp taking
-  precedence over git.
+- The version format is checked by hand in T2: `uv sync` then
+  `__version__` on a tag, one commit past it, and with a dirty tree. It
+  is the plugin's logic, not ours.
 - The dialog and the build script are checked by hand (section 6).
 
 ## 5. Out of scope
@@ -161,11 +157,9 @@ Done when `uv run pytest` passes, a double-click on a running sandbox
 download opens a dialog that fills in as yt-dlp prints, and the same on a
 failed row shows the `ERROR:` line.
 
-### T2. Versioning and release build (~160 lines, tests ~40)
+### T2. Versioning and release build (~45 lines)
 
-- Section 1, `yoink/version.py`, and the pyproject change. `About` and
-  the startup log line already read `yoink.__version__` and need no
-  change.
+- Section 1, the pyproject change, `FROZEN`, and the About suffix.
 
 Done when `scripts/build.sh --release` refuses on a dirty tree or an
 untagged `HEAD`, and on a tagged commit produces the named zip on this
@@ -180,8 +174,8 @@ downloads the managed yt-dlp.
 ### Phase 5 exit check
 
 - `uv run pytest` passes on Windows and on macOS or Linux.
-- About shows `0.1.0` in the release build and `0.1.0+N.<hash>` from a
-  source checkout one commit later.
+- About shows `0.1.0` in the release build and `0.1.0+N.<hash> (running
+  from source)` from a checkout one commit later.
 - A fresh user on each OS downloads the zip from the Releases page,
   launches Yoink, is walked through yt-dlp setup, and completes a download.
 - On macOS, the release notes alone get the user past Gatekeeper.
