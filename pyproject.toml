@@ -1,6 +1,6 @@
 [project]
 name = "yoink"
-version = "0.0.1"
+dynamic = ["version"]
 description = "A small Qt front end for yt-dlp"
 requires-python = ">=3.11"
 dependencies = [
@@ -11,11 +11,29 @@ dependencies = [
 yoink = "yoink.__main__:main"
 
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-include = ["yoink*"]
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.build.targets.wheel]
+packages = ["yoink"]
+
+# M.m.p on a clean v* tag, M.m.p+N.<hash> past it, .dirty if uncommitted.
+[tool.uv-dynamic-versioning]
+vcs = "git"
+fallback-version = "0.0.0"
+format-jinja = """
+    {%- if distance == 0 and not dirty -%}
+        {{ base }}
+    {%- else -%}
+        {{ base }}+{{ distance }}.{{ commit }}{% if dirty %}.dirty{% endif %}
+    {%- endif -%}
+"""
+
+[tool.uv]
+cache-keys = [{ git = { commit = true, tags = true } }]
 
 [dependency-groups]
 dev = [

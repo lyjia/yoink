@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from yoink import __version__, app, argv, binary, overrides, ytdlp_config
+from yoink import VERSION_LABEL, __version__, app, argv, binary, overrides, ytdlp_config
 from yoink.job import DownloadJob, JobState, Progress
 from yoink.ui.config_notice import ConfigNoticeDialog
 from yoink.ui.options_form import side_by_side
@@ -504,7 +504,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             f"About {app.APP_TITLE}",
-            f"{app.APP_TITLE} {__version__}\nA small front end for yt-dlp.\n\n"
+            f"{app.APP_TITLE} {VERSION_LABEL}\nA small front end for yt-dlp.\n\n"
             f"yt-dlp: {self.binary_path or 'not found'}",
         )
 

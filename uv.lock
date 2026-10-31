@@ -161,7 +161,6 @@ wheels = [
 
 [[package]]
 name = "yoink"
-version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "pyside6" },
