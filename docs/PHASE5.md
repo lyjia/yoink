@@ -93,7 +93,7 @@ Total: about 50 new lines.
 
 ### Tests
 
-- The version format is checked by hand in T2: `uv sync` then
+- The version format is checked by hand in T1: `uv sync` then
   `__version__` on a tag, one commit past it, and with a dirty tree. It
   is the plugin's logic, not ours.
 - The build script is checked by hand (section 5).
