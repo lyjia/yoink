@@ -96,7 +96,7 @@ Total: about 50 new lines.
 - The version format is checked by hand in T2: `uv sync` then
   `__version__` on a tag, one commit past it, and with a dirty tree. It
   is the plugin's logic, not ours.
-- The dialog and the build script are checked by hand (section 6).
+- The build script is checked by hand (section 5).
 
 ## 4. Out of scope
 
