@@ -926,4 +926,18 @@ Git-tag versioning, a release mode for the Nuitka build script, documented
 
 ## 10. Feature wishlist
 
-* Explorer/Finder/file manager integration - "Yoink here" right-click menu entry for directories, which opens a new Yoink instance with the destination set to the directory. If a Yoink window is already open, the destination folder is instead set to the requested directory. This may require some sort of configuration override feature, if settings (such as per-domain override) already dictate the destination
+Ideas without a design yet. The backlog in section 8 holds features that
+are understood and only unscheduled; an entry moves there once its open
+questions are settled.
+
+- **"Yoink here" in the file manager.** A right-click entry on a folder in
+  Explorer, Finder, or the Linux file manager that opens Yoink with the
+  directory field set to that folder, or, if Yoink is already running,
+  sets the field in the open window. For a user who already has the
+  destination folder open and wants to paste a URL into it. Open
+  question: how this interacts with a per-domain rule or config `-P`
+  that also sets the destination; it probably needs a one-shot override
+  that outranks both, shown with the existing overrides indicator.
+  Needs a registry entry on Windows, a Finder extension or Automator
+  quick action on macOS, and single-instance IPC for the running-window
+  case.
