@@ -2,7 +2,28 @@
 
 ## Status
 
-Not started. Branch `phase-5-distribution`.
+Implemented on branch `phase-5-distribution`; release not yet tagged.
+
+| Task | Commit |
+|------|--------|
+| Scope | `2e9569b` to `c150980` |
+| T1 | `7edfe25`, `6de216c` |
+| T2 | This commit. Docs only; tag and release pending. |
+
+Changed or added during implementation:
+
+- T1 is two commits: versioning, then the build script.
+- `build.sh` runs `uv sync --reinstall-package yoink`, not plain `uv sync`.
+  The dirty state is not a cache key, so a plain sync on a tag with
+  uncommitted changes keeps the bare version and `--release` would pass.
+- `yoink.VERSION_LABEL` holds the version with the "(running from source)"
+  suffix, used by About and the startup log line. The window title keeps
+  the bare version.
+- A checkout built with setuptools has a git-ignored `yoink.egg-info/`
+  that shadows the new metadata, so `__version__` stays `0.0.1`. Delete it
+  once.
+- The README status line says Phase 5 is in progress, not done, until the
+  release is published.
 
 Source: [DESIGN.md](DESIGN.md) section 8, Phase 5, plus section 7.
 

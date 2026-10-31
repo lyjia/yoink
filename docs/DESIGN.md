@@ -791,7 +791,12 @@ yt-dlp binary is not bundled; it is fetched on first run or found on PATH.
 `scripts/build.sh` (Git Bash on Windows, bash on Linux and macOS) makes a
 standalone test build in `dist/`, which git ignores: `dist/yoink.dist/` on
 Windows and Linux, `dist/yoink.app` on macOS. It includes Yoink's package
-metadata, because `yoink.__version__` is read from it. Release builds and
+metadata, because `yoink.__version__` is read from it. The version comes
+from git tags via `uv-dynamic-versioning`: `M.m.p` on a clean `v*` tag,
+`M.m.p+N.<hash>` past it, `.dirty` with uncommitted changes. Outside a
+Nuitka build, About shows the version with "(running from source)".
+`scripts/build.sh --release` runs `uv sync`, refuses unless the version is
+a bare `M.m.p`, and zips the build to `dist/yoink-<version>-<os>-<arch>.zip`.
 CI builds are backlog.
 
 macOS: Yoink.app runs into the same Gatekeeper problem as yt-dlp (6.6). An
