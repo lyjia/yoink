@@ -1,6 +1,6 @@
 # Yoink!
 
-A small GUI front-end for yt-dlp. 
+A small GUI front-end for yt-dlp. (yt-dlp not included)
 
 ## Download
 
