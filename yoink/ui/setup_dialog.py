@@ -48,14 +48,16 @@ CANT_VERIFY = (
     "macOS blocks this copy because it is quarantined: it was downloaded in a browser. "
     "Yoink couldn't verify it against yt-dlp's published checksums ({error}), so it may have "
     "been tampered with, and Yoink won't unblock it. Use &quot;{download}&quot; instead, or "
-    "clear the quarantine yourself (<a href=\"{url}\">Apple's instructions</a>)."
+    'clear the quarantine yourself (<a href="{url}">Apple\'s instructions</a>).'
 )
 NO_ZIP = "To verify it, choose the zip you downloaded."
 SUMS_FAILED = "Yoink couldn't download yt-dlp's checksums: {}"
 MATCHES = "This copy matches yt-dlp."
 CHOOSE_ZIP = "Choose the zip you downloaded…"
 ALLOW = "Allow this copy"
-ALLOW_QUESTION = "Remove the macOS quarantine flag from {}?\n\nmacOS will then run it without asking."
+ALLOW_QUESTION = (
+    "Remove the macOS quarantine flag from {}?\n\nmacOS will then run it without asking."
+)
 ALLOW_FAILED = "Yoink couldn't unblock this copy: {}"
 SINGLE_FILE = "yt-dlp_macos"  # the single-file asset's name in SHA2-256SUMS
 
@@ -69,7 +71,7 @@ def _sha256(f) -> bytes:
 
 
 def compare_folder(folder: Path, zip_path: Path) -> str:
-    """"" if the regular files under `folder` and in the zip are the same, else the first
+    """ "" if the regular files under `folder` and in the zip are the same, else the first
     difference. The zip's one top-level folder, if it has one, stands for `folder`."""
     try:
         with zipfile.ZipFile(zip_path) as zf:
@@ -77,8 +79,11 @@ def compare_folder(folder: Path, zip_path: Path) -> str:
             tops = {name.partition("/")[0] for name in entries}
             if len(tops) == 1 and all("/" in name for name in entries):
                 entries = {name.partition("/")[2]: i for name, i in entries.items()}
-            files = {p.relative_to(folder).as_posix(): p for p in folder.rglob("*")
-                     if p.is_file() and not p.is_symlink() and p.name != ".DS_Store"}
+            files = {
+                p.relative_to(folder).as_posix(): p
+                for p in folder.rglob("*")
+                if p.is_file() and not p.is_symlink() and p.name != ".DS_Store"
+            }
             for rel in sorted(entries.keys() | files.keys()):
                 if rel not in files:
                     return f"{rel} is missing from {folder}."
@@ -135,7 +140,9 @@ class SetupDialog(QDialog):
             self.hint.setText(f"I use {hint[0]}")
             copy = QPushButton("Copy")
             copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(hint[1]))
-            self.hint_row = side_by_side(QLineEdit(hint[1], readOnly=True), copy, QLabel(THEN_CHECK))
+            self.hint_row = side_by_side(
+                QLineEdit(hint[1], readOnly=True), copy, QLabel(THEN_CHECK)
+            )
             self.hint.clicked.connect(lambda: self.hint_row.setVisible(True))
         self.options = side_by_side(self.download, self.hint, self.check, stretch=None)
         self.hint.setVisible(hint is not None)
@@ -145,8 +152,16 @@ class SetupDialog(QDialog):
         self.status = QLabel()
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
-        for w in (self.message, self.output, self.repair, self.options, self.hint_row,
-                  self.progress, self.status, buttons):
+        for w in (
+            self.message,
+            self.output,
+            self.repair,
+            self.options,
+            self.hint_row,
+            self.progress,
+            self.status,
+            buttons,
+        ):
             layout.addWidget(w)
         self._show_progress(False)
         self.setMinimumWidth(560)
@@ -227,7 +242,9 @@ class SetupDialog(QDialog):
         if self._sums_reply or (self._sums is not None and not self._sums_error):
             return
         self._sums, self._sums_error = None, ""
-        self._sums_reply = reply = self._net.get(QNetworkRequest(QUrl(managed.RELEASE + managed.SUMS)))
+        self._sums_reply = reply = self._net.get(
+            QNetworkRequest(QUrl(managed.RELEASE + managed.SUMS))
+        )
         reply.finished.connect(lambda: self._sums_fetched(reply))
 
     def _sums_fetched(self, reply: QNetworkReply) -> None:
@@ -247,8 +264,9 @@ class SetupDialog(QDialog):
             return managed.verify(self._found, self._sums, SINGLE_FILE)
         if not self._zip:
             return NO_ZIP
-        return (managed.verify(self._zip, self._sums, managed.ASSET["darwin"])
-                or compare_folder(self._found.parent, self._zip))
+        return managed.verify(self._zip, self._sums, managed.ASSET["darwin"]) or compare_folder(
+            self._found.parent, self._zip
+        )
 
     def _check_copy(self) -> None:
         """Verify the quarantined copy once the checksums are here, and say how it went."""
@@ -257,8 +275,13 @@ class SetupDialog(QDialog):
         if self._sums is None:
             text = f"{BLOCKED} {CHECKING}"
         else:
-            text = MATCHES if self._verified else CANT_VERIFY.format(
-                error=html.escape(error.rstrip(".")), download=DOWNLOAD, url=APPLE_HELP)
+            text = (
+                MATCHES
+                if self._verified
+                else CANT_VERIFY.format(
+                    error=html.escape(error.rstrip(".")), download=DOWNLOAD, url=APPLE_HELP
+                )
+            )
         sp = QStyle.StandardPixmap
         icon = sp.SP_DialogApplyButton if self._verified else sp.SP_MessageBoxCritical
         self.repair_icon.setPixmap(self.style().standardIcon(icon).pixmap(32, 32))
@@ -268,7 +291,8 @@ class SetupDialog(QDialog):
 
     def _choose_zip(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, CHOOSE_ZIP.rstrip("…"), str(Path.home() / "Downloads"), "Zip files (*.zip)")
+            self, CHOOSE_ZIP.rstrip("…"), str(Path.home() / "Downloads"), "Zip files (*.zip)"
+        )
         if path:
             self._zip = Path(path)
             self._check_copy()
@@ -280,8 +304,13 @@ class SetupDialog(QDialog):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            subprocess.run(["xattr", "-dr", "com.apple.quarantine", str(target)],
-                           check=True, capture_output=True, text=True, timeout=30)
+            subprocess.run(
+                ["xattr", "-dr", "com.apple.quarantine", str(target)],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
         except (OSError, subprocess.SubprocessError) as e:
             self.message.setText(ALLOW_FAILED.format(getattr(e, "stderr", None) or e))
             return

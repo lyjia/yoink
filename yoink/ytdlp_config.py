@@ -69,15 +69,15 @@ def _tokens(text: str) -> list[str] | None:
 
 
 def _parse_line(head: re.Match, line: str) -> LoadedConfig | None:
-    label, rest = head[2] or "Included", line[head.end():]
+    label, rest = head[2] or "Included", line[head.end() :]
     depth = len(head[1]) // 2
     if rest.startswith(": "):
         tokens = _tokens(rest[2:])
         return None if tokens is None else LoadedConfig(label, None, tokens, depth)
     # The path is printed unescaped, so try each '": [' until the rest parses.
     for end in _PATH_END.finditer(rest, 2):  # rest starts with ' "'
-        if (tokens := _tokens(rest[end.end():])) is not None:
-            return LoadedConfig(label, rest[2:end.start()], tokens, depth)
+        if (tokens := _tokens(rest[end.end() :])) is not None:
+            return LoadedConfig(label, rest[2 : end.start()], tokens, depth)
     return None
 
 
@@ -115,7 +115,9 @@ def parse_probe(text: str) -> list[LoadedConfig] | None:
 # set by a repackager ends in "*"; an unknown one is left out.
 _VERSION = re.compile(
     r"^\[debug\] yt-dlp version (?P<label>\S+)(?: from (?P<origin>\S+)| build (?P<build>\S+))?"
-    r"(?: \[[^\]]*\])?(?: \((?P<variant>[^)]*)\))?", re.M)
+    r"(?: \[[^\]]*\])?(?: \((?P<variant>[^)]*)\))?",
+    re.M,
+)
 
 
 def _header(text: str) -> tuple[str, str, str] | None:
@@ -148,10 +150,23 @@ def is_stale(text: str, today: date) -> bool:
 
 # `--paths [TYPES:]PATH`, as split by yt-dlp's _dict_from_options_callback.
 # The types are "home", "temp", and the keys of yt-dlp's OUTTMPL_TYPES.
-_PATH_TYPES = "|".join((
-    "home", "temp", "chapter", "subtitle", "thumbnail", "description", "annotation",
-    "infojson", "link", "pl_video", "pl_thumbnail", "pl_description", "pl_infojson",
-))
+_PATH_TYPES = "|".join(
+    (
+        "home",
+        "temp",
+        "chapter",
+        "subtitle",
+        "thumbnail",
+        "description",
+        "annotation",
+        "infojson",
+        "link",
+        "pl_video",
+        "pl_thumbnail",
+        "pl_description",
+        "pl_infojson",
+    )
+)
 _TYPED_PATH = re.compile(rf"(?is)(?P<keys>({_PATH_TYPES})(,({_PATH_TYPES}))*):(?P<val>.*)$")
 
 
@@ -236,8 +251,9 @@ def config_defaults(loaded: list[LoadedConfig] | None) -> ConfigDefaults:
     if loaded is None:
         return ConfigDefaults(None, None, False)
     cookies, dirs = config_values(loaded, COOKIES), config_values(loaded, DIRECTORY)
-    return ConfigDefaults(shared_value(cookies) if cookies else "none",
-                          shared_value(dirs), bool(dirs))
+    return ConfigDefaults(
+        shared_value(cookies) if cookies else "none", shared_value(dirs), bool(dirs)
+    )
 
 
 # ---- editing the user config (docs/PHASE2.md section 1) ----------------------
@@ -248,9 +264,16 @@ class Line:
     raw: str  # as written, with its line ending
 
 
-class Blank(Line): pass  # empty or whitespace only
-class Comment(Line): pass  # only a "#" comment
-class Opaque(Line): pass  # short flags, several options, a stray value, unsplittable
+class Blank(Line):
+    """Empty or whitespace only."""
+
+
+class Comment(Line):
+    """Only a "#" comment."""
+
+
+class Opaque(Line):
+    """Short flags, several options, a stray value, or unsplittable."""
 
 
 @dataclass(frozen=True)
@@ -306,12 +329,15 @@ def owned_lines(lines: list[Line], names: Iterable[str]) -> dict[str, list[Optio
 def unmanaged(lines: list[Line], owned: dict[str, list[Option]]) -> list[Line]:
     """Lines for the warning box: all but blanks, comments, and lines a widget shows."""
     shown = [o[0] for o in owned.values() if len(o) == 1]
-    return [line for line in lines if not isinstance(line, (Blank, Comment))
-            and not any(line is s for s in shown)]
+    return [
+        line
+        for line in lines
+        if not isinstance(line, (Blank, Comment)) and not any(line is s for s in shown)
+    ]
 
 
 def _ending(raw: str) -> str:
-    return raw[len(raw.rstrip("\r\n")):]
+    return raw[len(raw.rstrip("\r\n")) :]
 
 
 def _comment(body: str) -> str:
@@ -320,7 +346,7 @@ def _comment(body: str) -> str:
     for i in (i for i, c in enumerate(body) if c == "#"):
         try:
             if shlex.split(body[:i]) == tokens:
-                return body[len(body[:i].rstrip()):]
+                return body[len(body[:i].rstrip()) :]
         except ValueError:  # this "#" is inside quotes
             pass
     return ""
@@ -333,11 +359,11 @@ def set_option(lines: list[Line], name: str, value: str | bool) -> list[Line]:
         if not _owns(line, name):
             continue
         if new is None:
-            return lines[:i] + lines[i + 1:]
+            return lines[:i] + lines[i + 1 :]
         if line.value == (None if value is True else value):
             return lines
         rest = _comment(line.raw.rstrip("\r\n")) + _ending(line.raw)
-        return [*lines[:i], _classify(new + rest), *lines[i + 1:]]
+        return [*lines[:i], _classify(new + rest), *lines[i + 1 :]]
     if new is None:
         return lines
     end = (_ending(lines[0].raw) if lines else "") or "\n"
@@ -348,9 +374,13 @@ def set_option(lines: list[Line], name: str, value: str | bool) -> list[Line]:
 
 # yt-dlp's Config.read_file and determine_file_encoding: a byte-order mark,
 # else a "# coding:" first line, else the locale encoding.
-_BOMS = [(codecs.BOM_UTF8, "utf-8"), (codecs.BOM_UTF32_BE, "utf-32-be"),
-         (codecs.BOM_UTF32_LE, "utf-32-le"), (codecs.BOM_UTF16_LE, "utf-16-le"),
-         (codecs.BOM_UTF16_BE, "utf-16-be")]
+_BOMS = [
+    (codecs.BOM_UTF8, "utf-8"),
+    (codecs.BOM_UTF32_BE, "utf-32-be"),
+    (codecs.BOM_UTF32_LE, "utf-32-le"),
+    (codecs.BOM_UTF16_LE, "utf-16-le"),
+    (codecs.BOM_UTF16_BE, "utf-16-be"),
+]
 _CODING = re.compile(rb"(?m)^#\s*coding\s*:\s*(\S+)\s*$")
 
 
@@ -384,7 +414,7 @@ def read_config(path: Path) -> ConfigFile:
     if not bom:
         m = _CODING.match(data[:512].replace(b"\0", b""))
         encoding = m[1].decode() if m else locale.getpreferredencoding(False)
-    return ConfigFile(path, parse_lines(data[len(bom):].decode(encoding)), encoding, bom, data)
+    return ConfigFile(path, parse_lines(data[len(bom) :].decode(encoding)), encoding, bom, data)
 
 
 def write_config(config: ConfigFile, lines: list[Line]) -> None:
@@ -406,8 +436,15 @@ def write_config(config: ConfigFile, lines: list[Line]) -> None:
 
 
 # yt-dlp's Config.hide_login_info, which the probe applies before printing.
-_PRIVATE = ("-p", "--password", "-u", "--username", "--video-password", "--ap-password",
-            "--ap-username")
+_PRIVATE = (
+    "-p",
+    "--password",
+    "-u",
+    "--username",
+    "--video-password",
+    "--ap-password",
+    "--ap-username",
+)
 _PRIVATE_EQ = re.compile("^(" + "|".join(map(re.escape, _PRIVATE)) + ")=.+$")
 
 
@@ -441,8 +478,14 @@ def split_cookie_spec(spec: str) -> tuple[str, str, str, str]:
 
 
 def join_cookie_spec(browser: str, keyring: str, profile: str, container: str) -> str:
-    return "".join((browser, keyring and f"+{keyring}", profile and f":{profile}",
-                    container and f"::{container}"))
+    return "".join(
+        (
+            browser,
+            keyring and f"+{keyring}",
+            profile and f":{profile}",
+            container and f"::{container}",
+        )
+    )
 
 
 def to_config_path(path: str) -> str:

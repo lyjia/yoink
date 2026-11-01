@@ -47,31 +47,44 @@ from yoink.ytdlp_config import (
 )
 
 TITLE = "Preferences"
-BINARY_TIP = ("The yt-dlp program that Yoink runs. Leave empty to use the one Yoink finds on its own. "
-              "The list shows every copy Yoink found.")
+BINARY_TIP = (
+    "The yt-dlp program that Yoink runs. Leave empty to use the one Yoink finds on its own. "
+    "The list shows every copy Yoink found."
+)
 UPDATE_TIP = "Updates the yt-dlp program that Yoink is using, or shows how to update it."
 UPDATE_TITLE = "Update yt-dlp"
 SETUP_TIP = "Checks the yt-dlp program, and can download a copy for Yoink to keep."
-STYLE_TIP = "How windows, buttons, and lists are drawn. System default matches the rest of your computer."
+STYLE_TIP = (
+    "How windows, buttons, and lists are drawn. System default matches the rest of your computer."
+)
 RESET_TIP = "Puts the download table's columns back to their default widths, order, and visibility."
 # What Update says for a build that yt-dlp can't update itself (3.3).
-DIR_BUILD = ("This copy of yt-dlp can't update itself. To update it, download the latest "
-             "release from github.com/yt-dlp/yt-dlp and replace the folder it came in.")
-UNKNOWN_BUILD = ("Yoink can't tell how this copy of yt-dlp was installed. "
-                 "Update it the same way you installed it.")
-REPEATED_TIP = ("This setting appears on more than one line of your config file. "
-                "Edit the file to change it.")
+DIR_BUILD = (
+    "This copy of yt-dlp can't update itself. To update it, download the latest "
+    "release from github.com/yt-dlp/yt-dlp and replace the folder it came in."
+)
+UNKNOWN_BUILD = (
+    "Yoink can't tell how this copy of yt-dlp was installed. "
+    "Update it the same way you installed it."
+)
+REPEATED_TIP = (
+    "This setting appears on more than one line of your config file. Edit the file to change it."
+)
 
 # Why the yt-dlp page is read-only (1.4), or the note under the unmanaged lines.
 PROBE_FAILED = "yt-dlp didn't report its config. Fix the file, then use File > Refresh config."
-MISMATCH = ("Yoink reads this file differently from yt-dlp, so it can't edit it safely. "
-            "Edit it in a text editor.")
+MISMATCH = (
+    "Yoink reads this file differently from yt-dlp, so it can't edit it safely. "
+    "Edit it in a text editor."
+)
 NOT_LOADED = "yt-dlp doesn't load this file, so editing it would have no effect."
 KEPT = "Yoink doesn't manage these lines. They are kept as they are."
 
 RULE_TITLE = "Domain rule"
-DOMAIN_TIP = ("A site name such as youtube.com. The rule also applies to its subdomains, "
-              "such as www.youtube.com.")
+DOMAIN_TIP = (
+    "A site name such as youtube.com. The rule also applies to its subdomains, "
+    "such as www.youtube.com."
+)
 
 
 def _missing(path: str) -> bool:
@@ -82,8 +95,13 @@ def _missing(path: str) -> bool:
 class RuleDialog(QDialog):
     """Edits one domain rule (PHASE3.md 4). OK leaves the results in `domain` and `options`."""
 
-    def __init__(self, domain: str, options: dict[str, str | bool], taken: set[str],
-                 parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        domain: str,
+        options: dict[str, str | bool],
+        taken: set[str],
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(RULE_TITLE)
         self.taken = taken  # the other rules' domains
@@ -126,8 +144,14 @@ class PrefsDialog(QDialog):
 
     setup_requested = Signal()
 
-    def __init__(self, settings: QSettings, loaded: list[LoadedConfig] | None,
-                 binary_path: Path | None, variant: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        settings: QSettings,
+        loaded: list[LoadedConfig] | None,
+        binary_path: Path | None,
+        variant: str,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(TITLE)
         self.settings = settings
@@ -174,10 +198,14 @@ class PrefsDialog(QDialog):
         self.binary_edit.setText(str(self.binary_setting))
         self.binary_edit.setClearButtonEnabled(True)
         self.binary_edit.setPlaceholderText(
-            str(self.binary_path) if self.binary_path else "yt-dlp not found on PATH")
+            str(self.binary_path) if self.binary_path else "yt-dlp not found on PATH"
+        )
         # A red border while the path points at nothing (a file deleted since it was set).
-        self.binary_edit.textChanged.connect(lambda text: self.binary_edit.setStyleSheet(
-            "border: 1px solid red" if _missing(text.strip()) else ""))
+        self.binary_edit.textChanged.connect(
+            lambda text: self.binary_edit.setStyleSheet(
+                "border: 1px solid red" if _missing(text.strip()) else ""
+            )
+        )
         self.binary_edit.textChanged.emit(self.binary_edit.text())
         update = QPushButton("Update", toolTip=f"{UPDATE_TIP}\n{self.binary_path}")
         update.setEnabled(self.binary_path is not None and self.binary_path.is_file())
@@ -192,7 +220,7 @@ class PrefsDialog(QDialog):
         self.style_setting = self.settings.value(app.KEY_STYLE, "")
         self.style_combo = QComboBox(toolTip=STYLE_TIP)
         self.style_combo.addItem("System default", "")
-        for name in QStyleFactory.keys():
+        for name in QStyleFactory.keys():  # noqa: SIM118 - QStyleFactory is a Qt class, not a dict
             self.style_combo.addItem(name, name)
         self.style_combo.setCurrentIndex(max(self.style_combo.findData(self.style_setting), 0))
         row = side_by_side(self.style_combo, stretch=None)
@@ -210,23 +238,26 @@ class PrefsDialog(QDialog):
             output = QPlainTextEdit(readOnly=True, placeholderText="Updating yt-dlp…")
             proc = QProcess(self)
             proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-            proc.finished.connect(
-                lambda: output.setPlainText(decode_output(bytes(proc.readAll()))))
+            proc.finished.connect(lambda: output.setPlainText(decode_output(bytes(proc.readAll()))))
             proc.errorOccurred.connect(lambda _: output.setPlainText(proc.errorString()))
             proc.start(str(self.binary_path), ["-U"])
             self._simple_dialog(output)
             proc.kill()  # if it is still running
             proc.waitForFinished(1000)
             self.updated = True
-        elif command := binary.update_command(binary.install_method(self.binary_path, self.variant)):
+        elif command := binary.update_command(
+            binary.install_method(self.binary_path, self.variant)
+        ):
             field = QLineEdit(command, readOnly=True)
             copy = QPushButton("Copy")
             copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(command))
-            self._simple_dialog(QLabel("To update yt-dlp, run this command:"),
-                                side_by_side(field, copy))
+            self._simple_dialog(
+                QLabel("To update yt-dlp, run this command:"), side_by_side(field, copy)
+            )
         else:
-            QMessageBox.information(self, UPDATE_TITLE,
-                                    DIR_BUILD if self.variant.endswith("_dir") else UNKNOWN_BUILD)
+            QMessageBox.information(
+                self, UPDATE_TITLE, DIR_BUILD if self.variant.endswith("_dir") else UNKNOWN_BUILD
+            )
 
     def _simple_dialog(self, *widgets: QWidget) -> None:
         dialog = QDialog(self, windowTitle=UPDATE_TITLE)
@@ -246,8 +277,13 @@ class PrefsDialog(QDialog):
         path, self.config, self.readonly = self._load(loaded)
         lines = self.config.lines if self.config else []
         owned = owned_lines(lines, self.form.fields)
-        self.form.load({name: True if o[0].value is None else o[0].value
-                        for name, o in owned.items() if len(o) == 1})
+        self.form.load(
+            {
+                name: True if o[0].value is None else o[0].value
+                for name, o in owned.items()
+                if len(o) == 1
+            }
+        )
         for name, field in self.form.fields.items():
             if len(owned[name]) > 1:
                 field.row.setEnabled(False)
@@ -317,7 +353,8 @@ class PrefsDialog(QDialog):
         for button in (edit, remove):
             button.setEnabled(False)
             table.itemSelectionChanged.connect(
-                lambda b=button: b.setEnabled(bool(self._selected_rule())))
+                lambda b=button: b.setEnabled(bool(self._selected_rule()))
+            )
         self._fill_rules()
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -388,8 +425,11 @@ class PrefsDialog(QDialog):
 
     def _save_config(self) -> bool:
         """Write the changed yt-dlp options, if any; False if the dialog should stay open."""
-        changed = {name: value for name, value in self.form.values().items()
-                   if value != self.baseline[name]}
+        changed = {
+            name: value
+            for name, value in self.form.values().items()
+            if value != self.baseline[name]
+        }
         if self.readonly or self.config is None or not changed:
             return True
         lines = self.config.lines
@@ -398,11 +438,15 @@ class PrefsDialog(QDialog):
         try:
             write_config(self.config, lines)
         except UnicodeEncodeError:
-            error = (f"A value can't be saved in this file's encoding ({self.config.encoding}). "
-                     "Nothing was saved.")
+            error = (
+                f"A value can't be saved in this file's encoding ({self.config.encoding}). "
+                "Nothing was saved."
+            )
         except ConfigChanged:
-            error = ("The config file changed after Preferences opened, so Yoink didn't save "
-                     "over it. Close Preferences and open it again.")
+            error = (
+                "The config file changed after Preferences opened, so Yoink didn't save "
+                "over it. Close Preferences and open it again."
+            )
         except OSError as e:
             error = f"Yoink couldn't save the config file:\n{e}"
         else:

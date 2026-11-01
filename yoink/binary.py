@@ -21,8 +21,11 @@ _EXECUTABLE = {"darwin": "yt-dlp_macos/yt-dlp_macos", "win32": "yt-dlp.exe"}
 # Finder-launched apps get launchd's PATH, which lacks these (DESIGN.md 6.2).
 _WELL_KNOWN = {
     "darwin": ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "~/.local/bin"],
-    "win32": [r"%LOCALAPPDATA%\Microsoft\WinGet\Links", r"%USERPROFILE%\scoop\shims",
-              r"%ChocolateyInstall%\bin"],
+    "win32": [
+        r"%LOCALAPPDATA%\Microsoft\WinGet\Links",
+        r"%USERPROFILE%\scoop\shims",
+        r"%ChocolateyInstall%\bin",
+    ],
     "linux": ["/usr/local/bin", "~/.local/bin"],
 }
 
@@ -39,8 +42,10 @@ def managed_path() -> Path:
 
 
 def _well_known() -> list[str]:
-    dirs = (os.path.expandvars(os.path.expanduser(d))
-            for d in _WELL_KNOWN.get(sys.platform, _WELL_KNOWN["linux"]))
+    dirs = (
+        os.path.expandvars(os.path.expanduser(d))
+        for d in _WELL_KNOWN.get(sys.platform, _WELL_KNOWN["linux"])
+    )
     return [d for d in dirs if os.path.isdir(d)]
 
 
@@ -82,8 +87,14 @@ def is_quarantined(path: Path) -> bool:
         return False
     root = install_root(path)
     try:
-        out = subprocess.run(["xattr", "-lr", str(root)], capture_output=True, text=True,
-                             errors="replace", timeout=10, check=True).stdout
+        out = subprocess.run(
+            ["xattr", "-lr", str(root)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=10,
+            check=True,
+        ).stdout
     except (OSError, subprocess.SubprocessError) as e:
         log.warning("Couldn't check %s for quarantine: %s", root, e)
         return False
@@ -97,8 +108,12 @@ def is_blocked(exited: bool, output: str, path: Path | None) -> bool:
 
 
 # yt-dlp reports "pip" for all of these; the resolved path tells them apart.
-_PIP_METHODS = [("/Cellar/", "Homebrew"), ("/opt/local/", "MacPorts"),
-                ("pipx/venvs", "pipx"), ("uv/tools", "uv tool")]
+_PIP_METHODS = [
+    ("/Cellar/", "Homebrew"),
+    ("/opt/local/", "MacPorts"),
+    ("pipx/venvs", "pipx"),
+    ("uv/tools", "uv tool"),
+]
 _UPDATE_COMMANDS = {
     "Homebrew": "brew upgrade yt-dlp",
     "MacPorts": "sudo port upgrade yt-dlp",

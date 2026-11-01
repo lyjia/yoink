@@ -53,7 +53,8 @@ _PRINT_DONE = f"after_move:{TOKEN}\tDONE\t%(filepath)s"
 def default_download_dir() -> str:
     # Native separators: Qt returns forward slashes on Windows.
     return os.path.normpath(
-        QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation))
+        QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
+    )
 
 
 def build_argv(
@@ -85,11 +86,16 @@ def build_argv(
         "--progress",
         "--newline",
         "--quiet",
-        "--progress-template", _DL_TEMPLATE,
-        "--progress-template", _PP_TEMPLATE,
-        "--print", _PRINT_FILE,
-        "--print", _PRINT_META,
-        "--print", _PRINT_DONE,
+        "--progress-template",
+        _DL_TEMPLATE,
+        "--progress-template",
+        _PP_TEMPLATE,
+        "--print",
+        _PRINT_FILE,
+        "--print",
+        _PRINT_META,
+        "--print",
+        _PRINT_DONE,
         "--",
         url,
     ]

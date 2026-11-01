@@ -38,8 +38,11 @@ def load_rules(path: Path) -> Rules:
     if not isinstance(data, dict):
         log.warning("Ignoring %s: not a JSON object", path)
         return {}
-    rules = {normalize_domain(d): {k: v for k, v in o.items() if isinstance(v, (str, bool))}
-             for d, o in data.items() if isinstance(o, dict) and normalize_domain(d)}
+    rules = {
+        normalize_domain(d): {k: v for k, v in o.items() if isinstance(v, (str, bool))}
+        for d, o in data.items()
+        if isinstance(o, dict) and normalize_domain(d)
+    }
     # Fewer entries: a bad or duplicate domain, or a non-object rule. Else a bad setting.
     if len(rules) < len(data) or rules != {normalize_domain(d): o for d, o in data.items()}:
         log.warning("Ignoring invalid rules or settings in %s", path)

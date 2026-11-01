@@ -62,19 +62,28 @@ def test_parse_sample():
         LoadedConfig(
             "User",
             "/Users/u/.config/yt-dlp/config",
-            ["--cookies-from-browser", "firefox", "--config-locations", "/Users/u/extra.conf",
-             "-P", "/tmp/a"],
+            [
+                "--cookies-from-browser",
+                "firefox",
+                "--config-locations",
+                "/Users/u/extra.conf",
+                "-P",
+                "/tmp/a",
+            ],
             0,
         ),
         LoadedConfig("Included", "/Users/u/extra.conf", ["-P", "/tmp/b"], 1),
     ]
 
 
-@pytest.mark.parametrize("path", [
-    "/Users/u/My Configs/yt-dlp.conf",
-    "/home/jürgen/設定/yt-dlp.conf",
-    'C:\\Users\\u\\odd": [name].conf',
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/Users/u/My Configs/yt-dlp.conf",
+        "/home/jürgen/設定/yt-dlp.conf",
+        'C:\\Users\\u\\odd": [name].conf',
+    ],
+)
 def test_parse_paths(path):
     probe = CMDLINE + f"[debug] System config \"{path}\": ['-P', '/x y']\n"
     assert parse_probe(probe) == [LoadedConfig("System", path, ["-P", "/x y"], 0)]
@@ -82,14 +91,16 @@ def test_parse_paths(path):
 
 def test_parse_deep_nesting_and_stdin():
     probe = CMDLINE + (
-        "[debug] Portable config \"/p/yt-dlp.conf\": []\n"
-        "[debug] | Config \"/a\": []\n"
+        '[debug] Portable config "/p/yt-dlp.conf": []\n'
+        '[debug] | Config "/a": []\n'
         "[debug] | | Config \"/b\": ['-P', '/b']\n"
         "[debug] | Stdin config: ['-P', '/s']\n"
     )
     assert [(c.label, c.path, c.depth) for c in parse_probe(probe)] == [
-        ("Portable", "/p/yt-dlp.conf", 0), ("Included", "/a", 1),
-        ("Included", "/b", 2), ("Stdin", None, 1),
+        ("Portable", "/p/yt-dlp.conf", 0),
+        ("Included", "/a", 1),
+        ("Included", "/b", 2),
+        ("Stdin", None, 1),
     ]
 
 
@@ -97,40 +108,49 @@ def test_parse_no_config_files():
     assert parse_probe(CMDLINE + "yt-dlp: error: You must provide at least one URL.\n") == []
 
 
-@pytest.mark.parametrize("text", [
-    "",
-    "zsh: command not found: yt-dlp\n",
-    CMDLINE + "[debug] User config \"/c\": ['-P', \n",  # truncated token list
-    CMDLINE + "[debug] User config \"/c\": [1, 2]\n",
-    # A config yt-dlp could not load: it prints only what it got so far.
-    CMDLINE + "yt-dlp: error: config location /x/extra.conf does not exist\n",
-    CMDLINE + "yt-dlp_macos: error: no such option: --bogus\n",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "zsh: command not found: yt-dlp\n",
+        CMDLINE + "[debug] User config \"/c\": ['-P', \n",  # truncated token list
+        CMDLINE + '[debug] User config "/c": [1, 2]\n',
+        # A config yt-dlp could not load: it prints only what it got so far.
+        CMDLINE + "yt-dlp: error: config location /x/extra.conf does not exist\n",
+        CMDLINE + "yt-dlp_macos: error: no such option: --bogus\n",
+    ],
+)
 def test_parse_garbage(text):
     assert parse_probe(text) is None
 
 
-@pytest.mark.parametrize(("tokens", "setting", "values"), [
-    (["--cookies-from-browser", "firefox"], COOKIES, ["firefox"]),
-    (["--cookies-from-browser=chrome:Profile 2"], COOKIES, ["chrome:Profile 2"]),
-    (["--no-cookies-from-browser"], COOKIES, ["none"]),
-    (["--cookies-from-browser", "safari", "--no-cookies-from-browser"], COOKIES,
-     ["safari", "none"]),
-    (["-P", "/x"], DIRECTORY, ["/x"]),
-    (["-P", "home:/x"], DIRECTORY, ["/x"]),
-    (["-P", "HOME:/x"], DIRECTORY, ["/x"]),
-    (["-P", "temp,home:/x"], DIRECTORY, ["/x"]),
-    (["-P", "temp:/x"], DIRECTORY, []),
-    (["-P", "thumbnail:/x"], DIRECTORY, []),
-    (["-P", "pl_infojson,temp:/x"], DIRECTORY, []),
-    (["-P", "C:\\x"], DIRECTORY, ["C:\\x"]),
-    (["-P", "bogus:/x"], DIRECTORY, ["bogus:/x"]),
-    (["--paths", "/x"], DIRECTORY, ["/x"]),
-    (["--paths=home:/x"], DIRECTORY, ["/x"]),
-    (["-P/x"], DIRECTORY, ["/x"]),
-    (["-o", "%(title)s.%(ext)s", "-P"], DIRECTORY, []),  # dangling option
-    (["--cookies-from-browser", "firefox"], DIRECTORY, []),
-])
+@pytest.mark.parametrize(
+    ("tokens", "setting", "values"),
+    [
+        (["--cookies-from-browser", "firefox"], COOKIES, ["firefox"]),
+        (["--cookies-from-browser=chrome:Profile 2"], COOKIES, ["chrome:Profile 2"]),
+        (["--no-cookies-from-browser"], COOKIES, ["none"]),
+        (
+            ["--cookies-from-browser", "safari", "--no-cookies-from-browser"],
+            COOKIES,
+            ["safari", "none"],
+        ),
+        (["-P", "/x"], DIRECTORY, ["/x"]),
+        (["-P", "home:/x"], DIRECTORY, ["/x"]),
+        (["-P", "HOME:/x"], DIRECTORY, ["/x"]),
+        (["-P", "temp,home:/x"], DIRECTORY, ["/x"]),
+        (["-P", "temp:/x"], DIRECTORY, []),
+        (["-P", "thumbnail:/x"], DIRECTORY, []),
+        (["-P", "pl_infojson,temp:/x"], DIRECTORY, []),
+        (["-P", "C:\\x"], DIRECTORY, ["C:\\x"]),
+        (["-P", "bogus:/x"], DIRECTORY, ["bogus:/x"]),
+        (["--paths", "/x"], DIRECTORY, ["/x"]),
+        (["--paths=home:/x"], DIRECTORY, ["/x"]),
+        (["-P/x"], DIRECTORY, ["/x"]),
+        (["-o", "%(title)s.%(ext)s", "-P"], DIRECTORY, []),  # dangling option
+        (["--cookies-from-browser", "firefox"], DIRECTORY, []),
+    ],
+)
 def test_config_values(tokens, setting, values):
     assert [o.value for o in config_values([cfg(*tokens)], setting)] == values
 
@@ -143,21 +163,27 @@ def test_config_values_probe_order():
     ]
 
 
-@pytest.mark.parametrize(("values", "shared"), [
-    ([], None),
-    (["firefox"], "firefox"),
-    (["firefox", "firefox"], "firefox"),
-    (["firefox", "none"], None),
-])
+@pytest.mark.parametrize(
+    ("values", "shared"),
+    [
+        ([], None),
+        (["firefox"], "firefox"),
+        (["firefox", "firefox"], "firefox"),
+        (["firefox", "none"], None),
+    ],
+)
 def test_shared_value(values, shared):
-    assert shared_value([Occurrence(COOKIES, v, f"/{i}", "User") for i, v in enumerate(values)]) \
+    assert (
+        shared_value([Occurrence(COOKIES, v, f"/{i}", "User") for i, v in enumerate(values)])
         == shared
+    )
 
 
 def test_find_conflicts_across_files():
     loaded = parse_probe(SAMPLE)
     assert [(o.value, o.label) for o in find_conflicts(loaded)] == [
-        ("/tmp/a", "User"), ("/tmp/b", "Included"),
+        ("/tmp/a", "User"),
+        ("/tmp/b", "Included"),
     ]
 
 
@@ -171,20 +197,30 @@ def test_find_conflicts_counts_files_not_values():
     assert find_conflicts([cfg("-P", "/x", path="/a"), cfg("-P", "temp:/t", path="/b")]) == []
 
 
-@pytest.mark.parametrize(("line", "expected"), [
-    ("stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", ("2026.10.21", "pip")),
-    ("stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4] (darwin_dir)", ("2026.10.21", "darwin_dir")),
-    ("nightly@2026.10.22.233505 from yt-dlp/yt-dlp-nightly-builds [0123abcde] (zip)",
-     ("2026.10.22.233505", "zip")),
-    ("stable@2026.03.17 from yt-dlp/yt-dlp (debian*)", ("2026.03.17", "debian*")),
-    ("someone/yt-dlp-fork@2026.10.21 [0123abcde] (source)", ("2026.10.21", "source")),
-    ("yt-dlp/yt-dlp@stable build 2026.10.21 [0123abcde] (pip)", ("2026.10.21", "pip")),
-    ("stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4]", ("2026.10.21", "")),  # unknown variant
-    ("stable@2026.10.21 from yt-dlp/yt-dlp", ("2026.10.21", "")),
-])
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", ("2026.10.21", "pip")),
+        (
+            "stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4] (darwin_dir)",
+            ("2026.10.21", "darwin_dir"),
+        ),
+        (
+            "nightly@2026.10.22.233505 from yt-dlp/yt-dlp-nightly-builds [0123abcde] (zip)",
+            ("2026.10.22.233505", "zip"),
+        ),
+        ("stable@2026.03.17 from yt-dlp/yt-dlp (debian*)", ("2026.03.17", "debian*")),
+        ("someone/yt-dlp-fork@2026.10.21 [0123abcde] (source)", ("2026.10.21", "source")),
+        ("yt-dlp/yt-dlp@stable build 2026.10.21 [0123abcde] (pip)", ("2026.10.21", "pip")),
+        ("stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4]", ("2026.10.21", "")),  # unknown variant
+        ("stable@2026.10.21 from yt-dlp/yt-dlp", ("2026.10.21", "")),
+    ],
+)
 def test_parse_version(line, expected):
-    probe = f"{CMDLINE}[debug] Encodings: locale UTF-8\n[debug] yt-dlp version {line}\n" \
+    probe = (
+        f"{CMDLINE}[debug] Encodings: locale UTF-8\n[debug] yt-dlp version {line}\n"
         "[debug] Python 3.12.11 (CPython arm64 64bit)\n"
+    )
     assert parse_version(probe) == expected
 
 
@@ -193,14 +229,17 @@ def test_parse_version_missing(text):
     assert parse_version(text) is None
 
 
-@pytest.mark.parametrize(("label", "stale"), [
-    ("stable@2026.01.11 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", False),  # 89 days old
-    ("stable@2026.01.09 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", True),  # 91 days old
-    ("nightly@2026.01.09.233505 from yt-dlp/yt-dlp-nightly-builds [0123abcde] (zip)", True),
-    ("yt-dlp/yt-dlp@stable build 2026.01.09 [0123abcde] (pip)", True),
-    ("someone/yt-dlp-fork@2026.01.09 [0123abcde] (source)", False),  # not an official build
-    ("stable@unknown from yt-dlp/yt-dlp (pip)", False),
-])
+@pytest.mark.parametrize(
+    ("label", "stale"),
+    [
+        ("stable@2026.01.11 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", False),  # 89 days old
+        ("stable@2026.01.09 from yt-dlp/yt-dlp [8cdf4fea4] (pip)", True),  # 91 days old
+        ("nightly@2026.01.09.233505 from yt-dlp/yt-dlp-nightly-builds [0123abcde] (zip)", True),
+        ("yt-dlp/yt-dlp@stable build 2026.01.09 [0123abcde] (pip)", True),
+        ("someone/yt-dlp-fork@2026.01.09 [0123abcde] (source)", False),  # not an official build
+        ("stable@unknown from yt-dlp/yt-dlp (pip)", False),
+    ],
+)
 def test_is_stale(label, stale):
     probe = f"{CMDLINE}[debug] yt-dlp version {label}\n"
     assert is_stale(probe, date(2026, 4, 10)) is stale
@@ -210,19 +249,36 @@ def test_is_stale_without_header():
     assert is_stale(SAMPLE, date(2026, 4, 10)) is False
 
 
-@pytest.mark.parametrize(("loaded", "expected"), [
-    (None, ConfigDefaults(None, None, False)),  # probe failed
-    ([], ConfigDefaults("none", None, False)),
-    ([cfg("--cookies-from-browser", "firefox", "-P", "/dl")], ConfigDefaults("firefox", "/dl", True)),
-    ([cfg("--no-cookies-from-browser", "-P", "temp:/t")], ConfigDefaults("none", None, False)),
-    ([cfg("-P", "/a", path="/a"), cfg("-P", "/b", path="/b", label="Included")],
-     ConfigDefaults("none", None, True)),
-    ([cfg("--cookies-from-browser", "safari", path="/a"),
-      cfg("--cookies-from-browser", "safari", "-P", "home:/x", path="/b")],
-     ConfigDefaults("safari", "/x", True)),
-    ([cfg("--cookies-from-browser", "safari", path="/a"),
-      cfg("--no-cookies-from-browser", path="/b")], ConfigDefaults(None, None, False)),
-])
+@pytest.mark.parametrize(
+    ("loaded", "expected"),
+    [
+        (None, ConfigDefaults(None, None, False)),  # probe failed
+        ([], ConfigDefaults("none", None, False)),
+        (
+            [cfg("--cookies-from-browser", "firefox", "-P", "/dl")],
+            ConfigDefaults("firefox", "/dl", True),
+        ),
+        ([cfg("--no-cookies-from-browser", "-P", "temp:/t")], ConfigDefaults("none", None, False)),
+        (
+            [cfg("-P", "/a", path="/a"), cfg("-P", "/b", path="/b", label="Included")],
+            ConfigDefaults("none", None, True),
+        ),
+        (
+            [
+                cfg("--cookies-from-browser", "safari", path="/a"),
+                cfg("--cookies-from-browser", "safari", "-P", "home:/x", path="/b"),
+            ],
+            ConfigDefaults("safari", "/x", True),
+        ),
+        (
+            [
+                cfg("--cookies-from-browser", "safari", path="/a"),
+                cfg("--no-cookies-from-browser", path="/b"),
+            ],
+            ConfigDefaults(None, None, False),
+        ),
+    ],
+)
 def test_config_defaults(loaded, expected):
     assert config_defaults(loaded) == expected
 
@@ -232,20 +288,25 @@ def test_config_defaults(loaded, expected):
 CONFIG = "# my config\n\n--no-mtime\n-f best\n--format best  # mine\n--paths temp:/t\n"
 
 
-@pytest.mark.parametrize(("raw", "expected"), [
-    ("\n", Blank("\n")),
-    ("   \r\n", Blank("   \r\n")),
-    ("  # note\n", Comment("  # note\n")),
-    ("--no-mtime\n", Option("--no-mtime\n", "--no-mtime", None)),
-    ("--format best\n", Option("--format best\n", "--format", "best")),
-    ("--format=best", Option("--format=best", "--format", "best")),
-    ("--output '%(title)s x' # c\r\n", Option("--output '%(title)s x' # c\r\n", "--output",
-                                               "%(title)s x")),
-    ("-f best\n", Opaque("-f best\n")),
-    ("--no-mtime --embed-subs\n", Opaque("--no-mtime --embed-subs\n")),
-    ("--format 'best\n", Opaque("--format 'best\n")),
-    ("stray\n", Opaque("stray\n")),
-])
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("\n", Blank("\n")),
+        ("   \r\n", Blank("   \r\n")),
+        ("  # note\n", Comment("  # note\n")),
+        ("--no-mtime\n", Option("--no-mtime\n", "--no-mtime", None)),
+        ("--format best\n", Option("--format best\n", "--format", "best")),
+        ("--format=best", Option("--format=best", "--format", "best")),
+        (
+            "--output '%(title)s x' # c\r\n",
+            Option("--output '%(title)s x' # c\r\n", "--output", "%(title)s x"),
+        ),
+        ("-f best\n", Opaque("-f best\n")),
+        ("--no-mtime --embed-subs\n", Opaque("--no-mtime --embed-subs\n")),
+        ("--format 'best\n", Opaque("--format 'best\n")),
+        ("stray\n", Opaque("stray\n")),
+    ],
+)
 def test_parse_lines(raw, expected):
     assert parse_lines(raw) == [expected]
     assert format_lines(parse_lines(raw)) == raw
@@ -256,19 +317,22 @@ def test_format_round_trips(text):
     assert format_lines(parse_lines(text)) == text
 
 
-@pytest.mark.parametrize(("text", "name", "value", "expected"), [
-    ("--format best  # mine\n", "--format", "a b", "--format 'a b'  # mine\n"),
-    ("--format=best\n", "--format", "it's", "--format 'it'\"'\"'s'\n"),
-    ("--format best\n", "--format", "best", "--format best\n"),  # unchanged: not rewritten
-    ("--format best\n--no-mtime\n", "--format", "", "--no-mtime\n"),
-    ("--embed-subs\n", "--embed-subs", False, ""),
-    ("-f best\r\n", "--embed-subs", True, "-f best\r\n--embed-subs\r\n"),
-    ("-f best", "--limit-rate", "5M", "-f best\n--limit-rate 5M\n"),
-    ("", "--limit-rate", "5M", "--limit-rate 5M\n"),
-    ("", "--limit-rate", "", ""),
-    ("--paths temp:/t\n", "--paths", "/x", "--paths temp:/t\n--paths /x\n"),
-    ("--paths home:/h\n", "--paths", "/x", "--paths /x\n"),
-])
+@pytest.mark.parametrize(
+    ("text", "name", "value", "expected"),
+    [
+        ("--format best  # mine\n", "--format", "a b", "--format 'a b'  # mine\n"),
+        ("--format=best\n", "--format", "it's", "--format 'it'\"'\"'s'\n"),
+        ("--format best\n", "--format", "best", "--format best\n"),  # unchanged: not rewritten
+        ("--format best\n--no-mtime\n", "--format", "", "--no-mtime\n"),
+        ("--embed-subs\n", "--embed-subs", False, ""),
+        ("-f best\r\n", "--embed-subs", True, "-f best\r\n--embed-subs\r\n"),
+        ("-f best", "--limit-rate", "5M", "-f best\n--limit-rate 5M\n"),
+        ("", "--limit-rate", "5M", "--limit-rate 5M\n"),
+        ("", "--limit-rate", "", ""),
+        ("--paths temp:/t\n", "--paths", "/x", "--paths temp:/t\n--paths /x\n"),
+        ("--paths home:/h\n", "--paths", "/x", "--paths /x\n"),
+    ],
+)
 def test_set_option(text, name, value, expected):
     assert format_lines(set_option(parse_lines(text), name, value)) == expected
 
@@ -277,20 +341,30 @@ def test_managed_lines():
     lines = parse_lines(CONFIG + "--sub-langs en\n--sub-langs=es\n--paths home:/h\n")
     owned = owned_lines(lines, ["--format", "--sub-langs", "--paths", "--proxy"])
     assert {n: [o.value for o in v] for n, v in owned.items()} == {
-        "--format": ["best"], "--sub-langs": ["en", "es"], "--paths": ["home:/h"], "--proxy": [],
+        "--format": ["best"],
+        "--sub-langs": ["en", "es"],
+        "--paths": ["home:/h"],
+        "--proxy": [],
     }
     # Repeated options, unmanaged options, and Opaque lines go to the warning box.
     assert [line.raw for line in unmanaged(lines, owned)] == [
-        "--no-mtime\n", "-f best\n", "--paths temp:/t\n", "--sub-langs en\n", "--sub-langs=es\n",
+        "--no-mtime\n",
+        "-f best\n",
+        "--paths temp:/t\n",
+        "--sub-langs en\n",
+        "--sub-langs=es\n",
     ]
 
 
-@pytest.mark.parametrize(("data", "encoding"), [
-    (codecs.BOM_UTF8 + "--format é\n".encode(), "utf-8"),
-    (codecs.BOM_UTF16_LE + "--format é\r\n".encode("utf-16-le"), "utf-16-le"),
-    ("# coding: latin-1\n--format é\n".encode("latin-1"), "latin-1"),
-    (b"--format best\n", locale.getpreferredencoding(False)),
-])
+@pytest.mark.parametrize(
+    ("data", "encoding"),
+    [
+        (codecs.BOM_UTF8 + "--format é\n".encode(), "utf-8"),
+        (codecs.BOM_UTF16_LE + "--format é\r\n".encode("utf-16-le"), "utf-16-le"),
+        ("# coding: latin-1\n--format é\n".encode("latin-1"), "latin-1"),
+        (b"--format best\n", locale.getpreferredencoding(False)),
+    ],
+)
 def test_read_write_round_trip(tmp_path, data, encoding):
     path = tmp_path / "config"
     path.write_bytes(data)
@@ -322,25 +396,31 @@ def test_write_failures_leave_file_untouched(tmp_path):
     assert [p.name for p in tmp_path.iterdir()] == ["config"]
 
 
-@pytest.mark.parametrize(("text", "tokens", "matches"), [
-    ("# c\n--format 'a b'  # x\n-f\tbest\n", ["--format", "a b", "-f", "best"], True),
-    ("--format 'a\nb'\n", ["--format", "a\nb"], False),  # a value spanning two lines
-    ("--format a\\\nb\n", ["--format", "a\nb"], False),  # a backslash ending a line
-    ("--password x\n-p\ny\n", ["--password", "PRIVATE", "-p", "PRIVATE"], True),
-    ("--username=x\n", ["--username=PRIVATE"], True),
-    ("--username=x\n", ["--username=x"], False),
-])
+@pytest.mark.parametrize(
+    ("text", "tokens", "matches"),
+    [
+        ("# c\n--format 'a b'  # x\n-f\tbest\n", ["--format", "a b", "-f", "best"], True),
+        ("--format 'a\nb'\n", ["--format", "a\nb"], False),  # a value spanning two lines
+        ("--format a\\\nb\n", ["--format", "a\nb"], False),  # a backslash ending a line
+        ("--password x\n-p\ny\n", ["--password", "PRIVATE", "-p", "PRIVATE"], True),
+        ("--username=x\n", ["--username=PRIVATE"], True),
+        ("--username=x\n", ["--username=x"], False),
+    ],
+)
 def test_matches_probe(text, tokens, matches):
     assert matches_probe(parse_lines(text), tokens) is matches
 
 
-@pytest.mark.parametrize(("spec", "parts"), [
-    ("firefox", ("firefox", "", "", "")),
-    ("chrome+KWALLET6", ("chrome", "KWALLET6", "", "")),
-    ("chrome:Profile 2", ("chrome", "", "Profile 2", "")),
-    ("firefox::Work", ("firefox", "", "", "Work")),
-    ("chrome+basictext:Default::none", ("chrome", "BASICTEXT", "Default", "none")),
-])
+@pytest.mark.parametrize(
+    ("spec", "parts"),
+    [
+        ("firefox", ("firefox", "", "", "")),
+        ("chrome+KWALLET6", ("chrome", "KWALLET6", "", "")),
+        ("chrome:Profile 2", ("chrome", "", "Profile 2", "")),
+        ("firefox::Work", ("firefox", "", "", "Work")),
+        ("chrome+basictext:Default::none", ("chrome", "BASICTEXT", "Default", "none")),
+    ],
+)
 def test_cookie_spec(spec, parts):
     assert split_cookie_spec(spec) == parts
     assert split_cookie_spec(join_cookie_spec(*parts)) == parts
@@ -360,8 +440,10 @@ def test_paths_posix():
 def test_paths_windows():
     assert to_config_path("C:\\Users\\u\\Videos") == "C:/Users/u/Videos"
     assert to_display_path("C:/Users/u/Videos") == "C:\\Users\\u\\Videos"
-    assert format_lines(set_option([], "--paths", to_config_path("C:\\My Videos"))) \
+    assert (
+        format_lines(set_option([], "--paths", to_config_path("C:\\My Videos")))
         == "--paths 'C:/My Videos'\n"
+    )
 
 
 @pytest.mark.parametrize("encoding", ["utf-8", locale.getpreferredencoding(False)])

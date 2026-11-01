@@ -7,7 +7,6 @@ stderr. Everything that is not a protocol line is kept in `log`.
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -205,5 +204,5 @@ class DownloadJob(QObject):
     def _last_error_line(self) -> str:
         for line in reversed(self.log):
             if line.startswith("ERROR:"):
-                return line[len("ERROR:"):].strip()
+                return line[len("ERROR:") :].strip()
         return self.log[-1] if self.log else ""
