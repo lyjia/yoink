@@ -3,7 +3,7 @@ import pytest
 from yoink import overrides
 from yoink.overrides import load_rules, match, normalize_domain, rule_argv, rule_lines, save_rules
 
-RULES = {"youtube.com": {}, "m.youtube.com": {}, "example.org": {}}
+RULES: dict[str, dict] = {"youtube.com": {}, "m.youtube.com": {}, "example.org": {}}
 
 
 @pytest.mark.parametrize(

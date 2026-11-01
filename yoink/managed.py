@@ -159,7 +159,9 @@ class Installer(QObject):
             lambda _, st: self._warmed(proc, st == QProcess.ExitStatus.NormalExit)
         )
         proc.errorOccurred.connect(
-            lambda e: e == QProcess.ProcessError.FailedToStart and self._warmed(proc, False)
+            lambda e: (
+                self._warmed(proc, False) if e == QProcess.ProcessError.FailedToStart else None
+            )
         )
         proc.start(str(self._exe), ytdlp_config.PROBE_ARGS)
         proc.closeWriteChannel()

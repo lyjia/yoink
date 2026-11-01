@@ -194,7 +194,9 @@ class SetupDialog(QDialog):
 
     def _fit(self) -> None:
         """Grow or shrink to the current state; wrapped labels need the layout settled first."""
-        self.layout().activate()
+        layout = self.layout()
+        assert layout is not None
+        layout.activate()
         self.resize(self.width(), self.sizeHint().height())
 
     # ---- download ---------------------------------------------------------

@@ -134,7 +134,7 @@ class RuleDialog(QDialog):
         if msg := self.form.validate():
             QMessageBox.warning(self, RULE_TITLE, msg)
             return
-        self.options = {k: v for k, v in self.form.values().items() if v}
+        self.options: dict[str, str | bool] = {k: v for k, v in self.form.values().items() if v}
         super().accept()
 
 
@@ -238,7 +238,9 @@ class PrefsDialog(QDialog):
             output = QPlainTextEdit(readOnly=True, placeholderText="Updating yt-dlp…")
             proc = QProcess(self)
             proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-            proc.finished.connect(lambda: output.setPlainText(decode_output(bytes(proc.readAll()))))
+            proc.finished.connect(
+                lambda: output.setPlainText(decode_output(bytes(proc.readAll().data())))
+            )
             proc.errorOccurred.connect(lambda _: output.setPlainText(proc.errorString()))
             proc.start(str(self.binary_path), ["-U"])
             self._simple_dialog(output)
@@ -290,7 +292,9 @@ class PrefsDialog(QDialog):
                 for w in (field.row, *field.row.findChildren(QWidget)):
                     w.setToolTip(REPEATED_TIP)
         self.baseline = self.form.values()
-        self.form.widget().setEnabled(not self.readonly)
+        content = self.form.widget()
+        assert content is not None
+        content.setEnabled(not self.readonly)
 
         # The warning box (2.4): the file, then every line no widget shows.
         path_label = QLabel(to_display_path(str(path)))

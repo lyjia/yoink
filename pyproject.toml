@@ -61,3 +61,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.11"
 files = ["yoink", "tests"]
 strict = false
+
+# PySide6 constructors accept any Qt property as a keyword (toolTip=,
+# windowTitle=, ...), but the stubs list only the class's own properties, not
+# inherited ones, so these calls fail to match. Runtime rejects bad names.
+[[tool.mypy.overrides]]
+module = ["yoink.ui.*"]
+disable_error_code = ["call-arg", "call-overload"]

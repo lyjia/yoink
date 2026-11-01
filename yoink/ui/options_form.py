@@ -44,7 +44,7 @@ CHROMIUM = {"brave", "chrome", "chromium", "edge", "opera", "vivaldi", "whale"}
 
 # The option table (PHASE2.md 2.2, 2.3): group, option, label, widget kind, tooltip. A
 # dict kind is an editable combo of {item: value}; the other kinds are in _make_field.
-OPTIONS = [
+OPTIONS: list[tuple[str, str, str, str | dict[str, str], str]] = [
     (
         "Files",
         "--paths",
@@ -295,9 +295,8 @@ class OptionsForm(QScrollArea):
         # A folder or archive path: native in the widget, forward slashes in the config.
         def set_(value: str | bool) -> None:
             path = _text(value)
-            if kind == "folder":  # --paths: drop a "home:" prefix
-                path = home_path(path)
-            edit.setText(to_display_path(path))
+            # --paths: drop a "home:" prefix
+            edit.setText(to_display_path(home_path(path) if kind == "folder" else path))
 
         return label, _Field(
             browse_row(edit, kind), lambda: to_config_path(edit.text().strip()), set_

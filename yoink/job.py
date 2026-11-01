@@ -123,11 +123,11 @@ class DownloadJob(QObject):
         self.state_changed.emit(state)
 
     def _read_stdout(self) -> None:
-        data = bytes(self._proc.readAllStandardOutput()).decode("utf-8", "replace")
+        data = bytes(self._proc.readAllStandardOutput().data()).decode("utf-8", "replace")
         self._feed("out", data)
 
     def _read_stderr(self) -> None:
-        data = bytes(self._proc.readAllStandardError()).decode("utf-8", "replace")
+        data = bytes(self._proc.readAllStandardError().data()).decode("utf-8", "replace")
         self._feed("err", data)
 
     def _feed(self, channel: str, data: str) -> None:
