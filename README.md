@@ -42,3 +42,7 @@ The result lands in `dist/yoink.dist/` (`dist/yoink.app` on macOS).
 `scripts/build.sh --release` also zips the build to
 `dist/yoink-<version>-<os>-<arch>.zip`. It requires a clean tree on a `v*`
 tag.
+
+## License
+
+AGPL-3.0-only. See [LICENSE](LICENSE).
