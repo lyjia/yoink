@@ -60,7 +60,7 @@
         {
             "label": "Build (Windows)",
             "type": "shell",
-            "command": "scripts\build.bat",
+            "command": "scripts\\build.bat",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -69,7 +69,7 @@
         {
             "label": "Build (release, Windows)",
             "type": "shell",
-            "command": "scripts\build.bat --release",
+            "command": "scripts\\build.bat --release",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
