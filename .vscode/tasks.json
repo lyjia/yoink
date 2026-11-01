@@ -56,6 +56,24 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": []
+        },
+        {
+            "label": "Build (Windows)",
+            "type": "shell",
+            "command": "scripts\build.bat",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build (release, Windows)",
+            "type": "shell",
+            "command": "scripts\build.bat --release",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
         }
     ]
 }
