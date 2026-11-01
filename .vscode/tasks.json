@@ -37,8 +37,8 @@
         },
         {
             "label": "Build",
-            "type": "process",
-            "command": "${workspaceFolder}/scripts/build.sh",
+            "type": "shell",
+            "command": "bash scripts/build.sh",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -50,9 +50,8 @@
         },
         {
             "label": "Build (release)",
-            "type": "process",
-            "command": "${workspaceFolder}/scripts/build.sh",
-            "args": ["--release"],
+            "type": "shell",
+            "command": "bash scripts/build.sh --release",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
