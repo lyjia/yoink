@@ -34,6 +34,29 @@
                 "isDefault": true
             },
             "problemMatcher": []
+        },
+        {
+            "label": "Build",
+            "type": "process",
+            "command": "${workspaceFolder}/scripts/build.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build (release)",
+            "type": "process",
+            "command": "${workspaceFolder}/scripts/build.sh",
+            "args": ["--release"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
         }
     ]
 }
