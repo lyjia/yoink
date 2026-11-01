@@ -2,10 +2,6 @@
 
 A small GUI front-end for yt-dlp. 
 
-Design and roadmap: [docs/DESIGN.md](docs/DESIGN.md).
-
-Status: Phases 0 to 4 are done; Phase 5, distribution, is in progress.
-
 ## Download
 
 Builds for Windows, macOS, and Linux are on the
