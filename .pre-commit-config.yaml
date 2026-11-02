@@ -1,9 +1,9 @@
 # Install once per clone: uv run pre-commit install
-# Keep rev in step with the ruff version in uv.lock.
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.3
+  - repo: local
     hooks:
-      - id: ruff-check
-        args: [--fix]
-      - id: ruff-format
+      - id: ruff
+        name: ruff (fix, format, re-stage)
+        entry: uv run python scripts/precommit_ruff.py
+        language: system
+        types_or: [python, pyi]
