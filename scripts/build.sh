@@ -22,7 +22,7 @@ done
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*) os=windows; extra="--windows-console-mode=attach --windows-icon-from-ico=dist/icons/yoink.ico"; out=dist/yoink.dist/yoink.exe ;;
     Darwin) os=macos; extra="--macos-app-name=Yoink --macos-app-icon=dist/icons/yoink.icns"; out=dist/yoink.app ;;
-    *) os=linux; extra=""; out=dist/yoink.dist/yoink ;;
+    *) os=linux; extra=""; out=dist/yoink.dist/yoink.bin ;;  # Nuitka adds .bin on Linux
 esac
 
 # Reinstall so the version metadata matches HEAD and the tree's dirty state.
