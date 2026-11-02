@@ -45,11 +45,10 @@ Requires uv.
 
 ```
 uv sync
-uv run pre-commit install
 uv run pytest
 ```
 
-The pre-commit hook runs ruff. CI also runs `uv run mypy`.
+CI runs `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy`.
 
 ## License
 
