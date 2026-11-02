@@ -797,7 +797,10 @@ from git tags via `uv-dynamic-versioning`: `M.m.p` on a clean `v*` tag,
 Nuitka build, About shows the version with "(running from source)".
 `scripts/build.sh --release` runs `uv sync`, refuses unless the version is
 a bare `M.m.p`, and zips the build to `dist/yoink-<version>-<os>-<arch>.zip`.
-CI builds are backlog.
+Woodpecker (`.woodpecker/test.yaml`) runs ruff, mypy, and pytest on Linux for
+pull requests and pushes to `master` and `development`. Pushing a `v*` tag
+runs a GitHub Actions workflow that builds and smoke-tests every platform and
+uploads the zips to a draft release; see `docs/RELEASING.md`.
 
 macOS: Yoink.app runs into the same Gatekeeper problem as yt-dlp (6.6). An
 unsigned app downloaded in a browser is blocked until the user clicks

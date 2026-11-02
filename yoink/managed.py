@@ -17,7 +17,9 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequ
 
 from yoink import binary, ytdlp_config
 
-RELEASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"  # tests may point it elsewhere
+RELEASE = (
+    "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"  # tests may point it elsewhere
+)
 ASSET = {"darwin": "yt-dlp_macos.zip", "win32": "yt-dlp.exe", "linux": "yt-dlp_linux"}
 SUMS = "SHA2-256SUMS"
 WARMUP_TIMEOUT_MS = 20_000  # as the config probe
@@ -25,8 +27,11 @@ MISMATCH = "The file doesn't match the published checksum."
 
 _HINTS = {
     "darwin": [("Homebrew", "brew install yt-dlp")],
-    "win32": [("winget", "winget install yt-dlp.yt-dlp"), ("Scoop", "scoop install yt-dlp"),
-              ("Chocolatey", "choco install yt-dlp")],
+    "win32": [
+        ("winget", "winget install yt-dlp.yt-dlp"),
+        ("Scoop", "scoop install yt-dlp"),
+        ("Chocolatey", "choco install yt-dlp"),
+    ],
     "linux": [("pipx", "pipx install yt-dlp")],
 }
 # A Finder-launched app's PATH has no Homebrew (DESIGN.md 6.2), so look where brew installs.
@@ -34,7 +39,7 @@ _BREW_PATH = os.pathsep.join(["/opt/homebrew/bin", "/usr/local/bin"])
 
 
 def verify(asset: Path, sums_text: str, name: str = "") -> str:
-    """"" if `asset` matches the `SHA2-256SUMS` line for `name` (default: its own file name),
+    """ "" if `asset` matches the `SHA2-256SUMS` line for `name` (default: its own file name),
     else the reason it doesn't."""
     name = name or asset.name
     for line in sums_text.splitlines():
@@ -88,6 +93,7 @@ class Installer(QObject):
             shutil.rmtree(self._new, ignore_errors=True)
             self._new.mkdir(parents=True)
             self._download(SUMS, lambda: self._download(self._asset.name, self._unpack))
+
         self._step(prepare)
 
     def _step(self, fn: Callable[[], None]) -> None:
@@ -103,8 +109,10 @@ class Installer(QObject):
     def _download(self, name: str, then: Callable[[], None]) -> None:
         self.status.emit(f"Downloading {name}…")
         request = QNetworkRequest(QUrl(RELEASE + name))
-        request.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
-                             QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
+        request.setAttribute(
+            QNetworkRequest.Attribute.RedirectPolicyAttribute,
+            QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy,
+        )
         f = (self._new / name).open("wb")
         reply = self._net.get(request)
         reply.readyRead.connect(lambda: f.write(reply.readAll().data()))
@@ -128,21 +136,33 @@ class Installer(QObject):
         sums.unlink()
         if sys.platform == "darwin":
             # ditto keeps the folder build's permission bits and symlinks; zipfile does not.
-            subprocess.run(["ditto", "-x", "-k", self._asset, self._new],
-                           check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["ditto", "-x", "-k", self._asset, self._new],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
             self._asset.unlink()
         elif sys.platform != "win32":
             self._exe.chmod(0o755)
         self._warm_up()
 
     def _warm_up(self) -> None:
-        """Run the new copy once, as the probe does, so a broken download never replaces a working one."""
+        """Run the new copy once, as the probe does.
+
+        A broken download then never replaces a working one.
+        """
         self.status.emit("Preparing yt-dlp…")
         proc = QProcess(self)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        proc.finished.connect(lambda _, st: self._warmed(proc, st == QProcess.ExitStatus.NormalExit))
+        proc.finished.connect(
+            lambda _, st: self._warmed(proc, st == QProcess.ExitStatus.NormalExit)
+        )
         proc.errorOccurred.connect(
-            lambda e: e == QProcess.ProcessError.FailedToStart and self._warmed(proc, False))
+            lambda e: (
+                self._warmed(proc, False) if e == QProcess.ProcessError.FailedToStart else None
+            )
+        )
         proc.start(str(self._exe), ytdlp_config.PROBE_ARGS)
         proc.closeWriteChannel()
         QTimer.singleShot(WARMUP_TIMEOUT_MS, proc, proc.kill)

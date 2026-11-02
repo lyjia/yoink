@@ -1,0 +1,46 @@
+# Lint and test pipeline.
+# Linux-only by design - tests are platform-agnostic and we want fast
+# feedback. Release builds run on GitHub Actions (docs/RELEASING.md).
+#
+# Pushing to a branch with an open PR fires BOTH a push and a
+# pull_request webhook; matching both would run this pipeline twice
+# per push. Dedup: PR events always run; push events only on the
+# long-lived branches (which never have PRs from themselves). A push
+# to a feature branch with no open PR runs nothing - CI starts when
+# the PR is opened.
+#
+# Each step runs in its own container; only the workspace persists
+# between steps. Steps must therefore be self-contained (install what
+# they need themselves) - dependencies installed in one step do not
+# exist in the next.
+#
+# Trust tier: untrusted (fork PRs run here after maintainer approval).
+# Must not depend on any secret.
+
+when:
+  - event: pull_request
+  - event: push
+    branch: [master, development]
+
+labels:
+  platform: linux/amd64
+
+steps:
+  - name: lint
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm
+    commands:
+      - uv sync --frozen
+      - uv run ruff check .
+      - uv run ruff format --check .
+      - uv run mypy
+
+  - name: test
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm
+    environment:
+      QT_QPA_PLATFORM: offscreen
+      DEBIAN_FRONTEND: noninteractive
+    commands:
+      # The Qt runtime libraries PySide6 needs, absent from a bare Debian image.
+      - apt-get update && apt-get install -y --no-install-recommends libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0
+      - uv sync --frozen
+      - uv run pytest

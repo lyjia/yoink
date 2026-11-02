@@ -44,7 +44,7 @@ def apply_style(name: str) -> None:
     """Use a QStyleFactory style; empty or unknown restores the one Qt picked."""
     global _default_style
     _default_style = _default_style or QApplication.style().objectName()
-    name = name if name in QStyleFactory.keys() else _default_style
+    name = name if name in QStyleFactory.keys() else _default_style  # noqa: SIM118 - QStyleFactory is a Qt class, not a dict
     if name.lower() != QApplication.style().objectName():
         QApplication.setStyle(name)
 

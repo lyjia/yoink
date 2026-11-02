@@ -1,4 +1,7 @@
-"""The yt-dlp option widgets, shared by the yt-dlp page and the rule editor (docs/PHASE3.md section 3)."""
+"""The yt-dlp option widgets, shared by the yt-dlp page and the rule editor.
+
+See docs/PHASE3.md section 3.
+"""
 
 import os
 import sys
@@ -41,60 +44,136 @@ CHROMIUM = {"brave", "chrome", "chromium", "edge", "opera", "vivaldi", "whale"}
 
 # The option table (PHASE2.md 2.2, 2.3): group, option, label, widget kind, tooltip. A
 # dict kind is an editable combo of {item: value}; the other kinds are in _make_field.
-OPTIONS = [
-    ("Files", "--paths", "Download folder", "folder",
-     "The folder where videos are saved. Leave empty to save them in your Downloads folder. "
-     "The Save to field in the main window can still choose a different folder for one download."),
-    ("Files", "--output", "File name", "text",
-     "How downloaded files are named. Leave empty for the usual name: the video title followed "
-     "by its ID. Example: %(title)s.%(ext)s names each file after its video title only."),
-    ("Files", "--download-archive", "Download archive", "archive",
-     "Keeps a list of videos you already downloaded, so they are skipped next time. "
-     "Pick any file name; the file is created if it doesn't exist."),
-    ("Video", "--format", "Format", FORMATS,
-     "Which version of the video to download. Leave empty to get the best quality available. "
-     "Pick a preset, or type your own."),
-    ("Video", "--merge-output-format", "Merged file type", MERGE_FORMATS,
-     "The file type to use when the picture and sound are downloaded separately and joined. "
-     "Leave empty to choose automatically. MP4 plays almost everywhere."),
-    ("Video", "--embed-thumbnail", "Embed thumbnail", "check",
-     "Adds the video's thumbnail picture to the file, so it shows as cover art."),
-    ("Video", "--embed-metadata", "Embed metadata", "check",
-     "Adds details such as the title, uploader, and date to the file."),
-    ("Video", "--sponsorblock-remove", "Remove SponsorBlock segments", "text",
-     "Cuts sponsor messages and similar parts out of YouTube videos, using a list shared by "
-     "other viewers. Type the kinds of parts to cut, separated by commas. "
-     "Example: sponsor,selfpromo. Type all to cut every kind."),
-    ("Subtitles", "--write-subs", "Save subtitles", "check",
-     "Saves subtitles as separate files next to the video."),
-    ("Subtitles", "--embed-subs", "Embed subtitles", "check",
-     "Puts subtitles inside the video file, so video players can show them. "
-     "Works with MP4, MKV, and WebM files."),
-    ("Subtitles", "--sub-langs", "Subtitle languages", "text",
-     "Which subtitle languages to get, separated by commas. Example: en,es gets English and "
-     "Spanish. Type all for every language. Leave empty for English."),
-    ("Sign-in", "--cookies-from-browser", "Use cookies from browser", "browser",
-     "Uses your sign-in from a web browser, so you can download videos that need an account. "
-     "Turn it off to download without signing in."),
-    ("Sign-in", "--cookies", "Use cookies from a file", "cookies",
-     "Uses a cookies file saved from your browser, for videos that need an account. Most people "
-     "should use cookies from browser instead. Downloads also save updated cookies back to this "
-     "file, including any from the browser when both are on."),
-    ("Network", "--proxy", "Proxy", "text",
-     "Sends downloads through another server. Only needed if your network or a proxy service "
-     "requires it. Leave empty to connect directly. Example: socks5://127.0.0.1:1080"),
-    ("Network", "--limit-rate", "Speed limit", "text",
-     "Slows downloads so they use less of your internet connection. Leave empty for full speed. "
-     "Example: 5M means 5 megabytes per second."),
+OPTIONS: list[tuple[str, str, str, str | dict[str, str], str]] = [
+    (
+        "Files",
+        "--paths",
+        "Download folder",
+        "folder",
+        "The folder where videos are saved. Leave empty to save them in your Downloads folder. "
+        "The Save to field in the main window can still choose a different folder "
+        "for one download.",
+    ),
+    (
+        "Files",
+        "--output",
+        "File name",
+        "text",
+        "How downloaded files are named. Leave empty for the usual name: the video title followed "
+        "by its ID. Example: %(title)s.%(ext)s names each file after its video title only.",
+    ),
+    (
+        "Files",
+        "--download-archive",
+        "Download archive",
+        "archive",
+        "Keeps a list of videos you already downloaded, so they are skipped next time. "
+        "Pick any file name; the file is created if it doesn't exist.",
+    ),
+    (
+        "Video",
+        "--format",
+        "Format",
+        FORMATS,
+        "Which version of the video to download. Leave empty to get the best quality available. "
+        "Pick a preset, or type your own.",
+    ),
+    (
+        "Video",
+        "--merge-output-format",
+        "Merged file type",
+        MERGE_FORMATS,
+        "The file type to use when the picture and sound are downloaded separately and joined. "
+        "Leave empty to choose automatically. MP4 plays almost everywhere.",
+    ),
+    (
+        "Video",
+        "--embed-thumbnail",
+        "Embed thumbnail",
+        "check",
+        "Adds the video's thumbnail picture to the file, so it shows as cover art.",
+    ),
+    (
+        "Video",
+        "--embed-metadata",
+        "Embed metadata",
+        "check",
+        "Adds details such as the title, uploader, and date to the file.",
+    ),
+    (
+        "Video",
+        "--sponsorblock-remove",
+        "Remove SponsorBlock segments",
+        "text",
+        "Cuts sponsor messages and similar parts out of YouTube videos, using a list shared by "
+        "other viewers. Type the kinds of parts to cut, separated by commas. "
+        "Example: sponsor,selfpromo. Type all to cut every kind.",
+    ),
+    (
+        "Subtitles",
+        "--write-subs",
+        "Save subtitles",
+        "check",
+        "Saves subtitles as separate files next to the video.",
+    ),
+    (
+        "Subtitles",
+        "--embed-subs",
+        "Embed subtitles",
+        "check",
+        "Puts subtitles inside the video file, so video players can show them. "
+        "Works with MP4, MKV, and WebM files.",
+    ),
+    (
+        "Subtitles",
+        "--sub-langs",
+        "Subtitle languages",
+        "text",
+        "Which subtitle languages to get, separated by commas. Example: en,es gets English and "
+        "Spanish. Type all for every language. Leave empty for English.",
+    ),
+    (
+        "Sign-in",
+        "--cookies-from-browser",
+        "Use cookies from browser",
+        "browser",
+        "Uses your sign-in from a web browser, so you can download videos that need an account. "
+        "Turn it off to download without signing in.",
+    ),
+    (
+        "Sign-in",
+        "--cookies",
+        "Use cookies from a file",
+        "cookies",
+        "Uses a cookies file saved from your browser, for videos that need an account. Most people "
+        "should use cookies from browser instead. Downloads also save updated cookies back to this "
+        "file, including any from the browser when both are on.",
+    ),
+    (
+        "Network",
+        "--proxy",
+        "Proxy",
+        "text",
+        "Sends downloads through another server. Only needed if your network or a proxy service "
+        "requires it. Leave empty to connect directly. Example: socks5://127.0.0.1:1080",
+    ),
+    (
+        "Network",
+        "--limit-rate",
+        "Speed limit",
+        "text",
+        "Slows downloads so they use less of your internet connection. Leave empty for full speed. "
+        "Example: 5M means 5 megabytes per second.",
+    ),
 ]
 BROWSER_TIPS = {
     "browser": "The browser you are signed in with.",
     "profile": "The browser profile to use, if you have more than one. "
-               "Leave empty for the one you used most recently.",
+    "Leave empty for the one you used most recently.",
     "container": "Firefox only. The container tab to take your sign-in from. Leave empty to use "
-                 "all of them. Type none to use only tabs outside any container.",
+    "all of them. Type none to use only tabs outside any container.",
     "keyring": "Only used on Linux, with Chrome and similar browsers. Tells yt-dlp where the "
-               "browser keeps its saved passwords. Leave empty to find it automatically.",
+    "browser keeps its saved passwords. Leave empty to find it automatically.",
 }
 COOKIES_PATH_TIP = "The cookies file to use."
 # What an empty field means, for the options whose default is known (PHASE2.md 2.5).
@@ -126,13 +205,15 @@ def side_by_side(*widgets: QWidget, stretch: int | None = 0) -> QWidget:
 def browse_row(edit: QLineEdit, kind: str = "file", field: QWidget | None = None) -> QWidget:
     """`field` (`edit` by default; say, the combo box `edit` belongs to) with a Browse…
     button that fills `edit` with an existing file, a "folder", or an "archive"."""
+
     def browse() -> None:
         start = edit.text()
         if kind == "folder":
             chosen = QFileDialog.getExistingDirectory(edit, "", start)
         elif kind == "archive":  # the file need not exist yet
             chosen = QFileDialog.getSaveFileName(
-                edit, "", start, options=QFileDialog.Option.DontConfirmOverwrite)[0]
+                edit, "", start, options=QFileDialog.Option.DontConfirmOverwrite
+            )[0]
         else:
             chosen = QFileDialog.getOpenFileName(edit, "", start)[0]
         if chosen:
@@ -146,8 +227,9 @@ def browse_row(edit: QLineEdit, kind: str = "file", field: QWidget | None = None
 class OptionsForm(QScrollArea):
     """A widget for each row of OPTIONS, in group boxes. Values use set_option's terms."""
 
-    def __init__(self, placeholders: dict[str, str] | None = None,
-                 parent: QWidget | None = None) -> None:
+    def __init__(
+        self, placeholders: dict[str, str] | None = None, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent, widgetResizable=True)
         content = QWidget()
         groups = QVBoxLayout(content)
@@ -159,7 +241,8 @@ class OptionsForm(QScrollArea):
                 forms[group] = QFormLayout(box)
                 groups.addWidget(box)
             form_label, self.fields[name] = self._make_field(
-                kind, label, tip, (placeholders or {}).get(name, ""))
+                kind, label, tip, (placeholders or {}).get(name, "")
+            )
             forms[group].addRow(form_label, self.fields[name].row)
             if form_label:
                 forms[group].labelForField(self.fields[name].row).setToolTip(tip)
@@ -180,8 +263,9 @@ class OptionsForm(QScrollArea):
             return "Choose a cookies file, or turn off Use cookies from a file."
         return ""
 
-    def _make_field(self, kind: str | dict, label: str, tip: str,
-                    placeholder: str = "") -> tuple[str, _Field]:
+    def _make_field(
+        self, kind: str | dict, label: str, tip: str, placeholder: str = ""
+    ) -> tuple[str, _Field]:
         """The form label and field for one row of OPTIONS."""
         if kind == "check":
             box = QCheckBox(label, toolTip=tip)
@@ -197,21 +281,26 @@ class OptionsForm(QScrollArea):
                 combo.addItem(item, value)
             # A preset puts its value in the edit field, where it can be changed.
             combo.activated.connect(lambda i: combo.setEditText(combo.itemData(i)))
-            return label, _Field(combo, lambda: combo.currentText().strip(),
-                                 lambda value: combo.setEditText(_text(value)))
+            return label, _Field(
+                combo,
+                lambda: combo.currentText().strip(),
+                lambda value: combo.setEditText(_text(value)),
+            )
         edit = QLineEdit(toolTip=tip, placeholderText=placeholder)
         if kind == "text":
-            return label, _Field(edit, lambda: edit.text().strip(),
-                                 lambda value: edit.setText(_text(value)))
+            return label, _Field(
+                edit, lambda: edit.text().strip(), lambda value: edit.setText(_text(value))
+            )
+
         # A folder or archive path: native in the widget, forward slashes in the config.
         def set_(value: str | bool) -> None:
             path = _text(value)
-            if kind == "folder":  # --paths: drop a "home:" prefix
-                path = home_path(path)
-            edit.setText(to_display_path(path))
+            # --paths: drop a "home:" prefix
+            edit.setText(to_display_path(home_path(path) if kind == "folder" else path))
 
-        return label, _Field(browse_row(edit, kind),
-                             lambda: to_config_path(edit.text().strip()), set_)
+        return label, _Field(
+            browse_row(edit, kind), lambda: to_config_path(edit.text().strip()), set_
+        )
 
     def _cookies_file_field(self, label: str, tip: str) -> _Field:
         self.cookies_check = QCheckBox(label, toolTip=tip)
@@ -256,10 +345,12 @@ def _browser_field(label: str, tip: str) -> _Field:
         if not check.isChecked():
             return ""
         has_keyring, has_container = applies()  # a disabled field is left out
-        return join_cookie_spec(browser.currentText(),
-                                keyring.currentText() if has_keyring else "",
-                                profile.text().strip(),
-                                container.text().strip() if has_container else "")
+        return join_cookie_spec(
+            browser.currentText(),
+            keyring.currentText() if has_keyring else "",
+            profile.text().strip(),
+            container.text().strip() if has_container else "",
+        )
 
     def set_(value: str | bool) -> None:
         check.setChecked(bool(value))

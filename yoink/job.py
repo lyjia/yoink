@@ -7,7 +7,6 @@ stderr. Everything that is not a protocol line is kept in `log`.
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -124,11 +123,11 @@ class DownloadJob(QObject):
         self.state_changed.emit(state)
 
     def _read_stdout(self) -> None:
-        data = bytes(self._proc.readAllStandardOutput()).decode("utf-8", "replace")
+        data = bytes(self._proc.readAllStandardOutput().data()).decode("utf-8", "replace")
         self._feed("out", data)
 
     def _read_stderr(self) -> None:
-        data = bytes(self._proc.readAllStandardError()).decode("utf-8", "replace")
+        data = bytes(self._proc.readAllStandardError().data()).decode("utf-8", "replace")
         self._feed("err", data)
 
     def _feed(self, channel: str, data: str) -> None:
@@ -205,5 +204,5 @@ class DownloadJob(QObject):
     def _last_error_line(self) -> str:
         for line in reversed(self.log):
             if line.startswith("ERROR:"):
-                return line[len("ERROR:"):].strip()
+                return line[len("ERROR:") :].strip()
         return self.log[-1] if self.log else ""

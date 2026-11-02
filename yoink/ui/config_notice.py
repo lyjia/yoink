@@ -20,17 +20,16 @@ STDIN = "(standard input)"
 
 
 class ConfigNoticeDialog(QDialog):
-    def __init__(self, loaded: list[LoadedConfig], conflicts: list[Occurrence],
-                 parent: QWidget | None = None) -> None:
+    def __init__(
+        self, loaded: list[LoadedConfig], conflicts: list[Occurrence], parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("yt-dlp configuration")
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel("yt-dlp loaded these config files:"))
         # An included file is indented under the file that included it.
-        files = QLabel("\n".join(
-            f"{'    ' * c.depth}{c.label}: {c.path or STDIN}" for c in loaded
-        ))
+        files = QLabel("\n".join(f"{'    ' * c.depth}{c.label}: {c.path or STDIN}" for c in loaded))
         files.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(files)
 

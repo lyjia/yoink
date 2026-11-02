@@ -37,7 +37,19 @@ The result lands in `dist/yoink.dist/` (`dist/yoink.app` on macOS).
 
 `scripts/build.sh --release` also zips the build to
 `dist/yoink-<version>-<os>-<arch>.zip`. It requires a clean tree on a `v*`
-tag.
+tag. To publish a release, see [docs/RELEASING.md](docs/RELEASING.md).
+
+### Contributing
+
+Requires uv.
+
+```
+uv sync
+uv run pre-commit install
+uv run pytest
+```
+
+The pre-commit hook runs ruff. CI also runs `uv run mypy`.
 
 ## License
 

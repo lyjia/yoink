@@ -42,10 +42,42 @@ from yoink.ui.setup_dialog import SetupDialog
 
 log = logging.getLogger(__name__)
 
-COLUMNS = ["", "Status", "Scheme", "Host", "Path", "Filename", "Downloaded", "Total", "Speed",
-           "Progress", "Title", "Uploader", "Duration", "Resolution", "Upload date", ""]
-(C_ICON, C_STATUS, C_SCHEME, C_HOST, C_PATH, C_FILE, C_DOWN, C_TOTAL, C_SPEED, C_PROG,
- C_TITLE, C_UPLOADER, C_DURATION, C_RES, C_DATE, C_ACTION) = range(len(COLUMNS))
+COLUMNS = [
+    "",
+    "Status",
+    "Scheme",
+    "Host",
+    "Path",
+    "Filename",
+    "Downloaded",
+    "Total",
+    "Speed",
+    "Progress",
+    "Title",
+    "Uploader",
+    "Duration",
+    "Resolution",
+    "Upload date",
+    "",
+]
+(
+    C_ICON,
+    C_STATUS,
+    C_SCHEME,
+    C_HOST,
+    C_PATH,
+    C_FILE,
+    C_DOWN,
+    C_TOTAL,
+    C_SPEED,
+    C_PROG,
+    C_TITLE,
+    C_UPLOADER,
+    C_DURATION,
+    C_RES,
+    C_DATE,
+    C_ACTION,
+) = range(len(COLUMNS))
 META_COLUMNS = range(C_TITLE, C_ACTION)  # in the order of the META fields
 HIDDEN = (C_SCHEME, *META_COLUMNS)  # until shown from the View menu
 # Table widths, order and hidden columns. Qt restores them by column index, so a
@@ -180,9 +212,18 @@ class MainWindow(QMainWindow):
         self.table.setWordWrap(False)  # elide text that doesn't fit
         # Default widths: the header text, or room for the usual contents.
         self.table.resizeColumnsToContents()
-        for col, width in {C_ICON: 28, C_STATUS: 80, C_HOST: 100, C_PATH: 180,
-                           C_FILE: 180, C_TOTAL: 70, C_SPEED: 80, C_PROG: 100, C_TITLE: 180,
-                           C_ACTION: 66}.items():
+        for col, width in {
+            C_ICON: 28,
+            C_STATUS: 80,
+            C_HOST: 100,
+            C_PATH: 180,
+            C_FILE: 180,
+            C_TOTAL: 70,
+            C_SPEED: 80,
+            C_PROG: 100,
+            C_TITLE: 180,
+            C_ACTION: 66,
+        }.items():
             self.table.setColumnWidth(col, width)
         for col in HIDDEN:
             hdr.setSectionHidden(col, True)
@@ -225,14 +266,17 @@ class MainWindow(QMainWindow):
         else:
             self.resize(1000, 560)
         app.migrate_settings(self.settings)
-        self.dir_edit.setText(self.settings.value(app.KEY_DIR, ""))
+        self.dir_edit.setText(str(self.settings.value(app.KEY_DIR, "")))
         # An unknown value (say, a browser dropped from the list) follows the config.
         i = self.cookies_combo.findData(self.settings.value(app.KEY_COOKIES, ""))
         self.cookies_combo.setCurrentIndex(max(i, 0))
         self._set_header(self.settings.value(HEADER_KEY))
 
     def _set_header(self, state: QByteArray | None) -> None:
-        """Restore the table columns from `state`, or the defaults if there is none or Qt rejects it."""
+        """Restore the table columns from `state`.
+
+        Falls back to the defaults if there is none or Qt rejects it.
+        """
         hdr = self.table.horizontalHeader()
         if not (state and hdr.restoreState(state)):
             hdr.restoreState(self._default_header)
@@ -245,7 +289,10 @@ class MainWindow(QMainWindow):
         """Ask yt-dlp which configs it loads; the answer arrives in _probe_done."""
         if not (self.binary_path and self.binary_path.is_file()):
             self.status_label.setText(
-                f"yt-dlp not found: {self.binary_path}" if self.binary_path else "yt-dlp not found on PATH")
+                f"yt-dlp not found: {self.binary_path}"
+                if self.binary_path
+                else "yt-dlp not found on PATH"
+            )
             self.status_label.setToolTip("Set the yt-dlp program in Preferences.")
             self.start_btn.setEnabled(False)
             self._set_probe_result(self.binary_path, "", "", "")
@@ -268,7 +315,9 @@ class MainWindow(QMainWindow):
             lambda _, status: self._probe_done(proc, status == QProcess.ExitStatus.NormalExit)
         )
         proc.errorOccurred.connect(
-            lambda e: e == QProcess.ProcessError.FailedToStart and self._probe_done(proc, False)
+            lambda e: (
+                self._probe_done(proc, False) if e == QProcess.ProcessError.FailedToStart else None
+            )
         )
         proc.start(str(self.binary_path), ytdlp_config.PROBE_ARGS)
         proc.closeWriteChannel()  # so `--config-locations -` reads EOF instead of hanging
@@ -282,7 +331,7 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(True)
         self.prefs_action.setEnabled(True)
         self.start_btn.setToolTip("")
-        text = ytdlp_config.decode_output(bytes(proc.readAll()))
+        text = ytdlp_config.decode_output(bytes(proc.readAll().data()))
         # A killed probe may have listed some config files but not all of them.
         self.loaded_configs = ytdlp_config.parse_probe(text) if exited else None
         if self.loaded_configs is None:
@@ -295,10 +344,7 @@ class MainWindow(QMainWindow):
         self.variant = ver[1] if ver else ""
         method = binary.install_method(self.binary_path, self.variant)
         self._set_probe_result(self.binary_path, ver[0] if ver else "", method, text.strip())
-        if ver:
-            status = f"yt-dlp {ver[0]} ({method})"
-        else:
-            status = "yt-dlp unknown version"
+        status = f"yt-dlp {ver[0]} ({method})" if ver else "yt-dlp unknown version"
         tip = str(self.binary_path)
         if ytdlp_config.is_stale(text, date.today()):
             status, tip = f"{status}, over 90 days old", f"{STALE_TIP}\n\n{tip}"
@@ -335,7 +381,9 @@ class MainWindow(QMainWindow):
         dialog.open()
 
     def show_prefs(self) -> None:
-        dialog = PrefsDialog(self.settings, self.loaded_configs, self.binary_path, self.variant, self)
+        dialog = PrefsDialog(
+            self.settings, self.loaded_configs, self.binary_path, self.variant, self
+        )
         dialog.setup_requested.connect(self.show_setup)
         dialog.exec()
         dialog.deleteLater()
@@ -371,7 +419,10 @@ class MainWindow(QMainWindow):
         return ytdlp_config.home_path(str(self.rule.get("--paths") or "")) or ""
 
     def _refresh_defaults(self) -> None:
-        """Show the defaults in effect: the URL's rule, else the config (docs/PHASE3.md section 5)."""
+        """Show the defaults in effect: the URL's rule, else the config.
+
+        See docs/PHASE3.md section 5.
+        """
         d = self.config_defaults
         # The option takes a string; str() is for the typechecker.
         rule_cookies = str(self.rule.get("--cookies-from-browser") or "")
@@ -381,7 +432,9 @@ class MainWindow(QMainWindow):
         # The cookies tooltip and pitfall text follow this, too.
         self.config_cookies = rule_cookies or d.cookies
         self.cookies_combo.setItemText(
-            0, f"Config default ({self.config_cookies})" if self.config_cookies else "Config default")
+            0,
+            f"Config default ({self.config_cookies})" if self.config_cookies else "Config default",
+        )
         self.rule_label.setVisible(self.rule_domain is not None)
         self.rule_label.setText(f"Rule for {self.rule_domain} applies")
         self.rule_label.setToolTip("\n".join(overrides.rule_lines(self.rule)))
@@ -397,7 +450,9 @@ class MainWindow(QMainWindow):
         cookies_from_rule = not cookies and bool(self.rule.get("--cookies-from-browser"))
         for widget, on in ((self.dir_edit, dir_from_rule), (self.cookies_combo, cookies_from_rule)):
             # Scoped to the widget's class, so a combo's popup list keeps its own frame.
-            widget.setStyleSheet(f"{type(widget).__name__} {{ border: 2px solid green }}" if on else "")
+            widget.setStyleSheet(
+                f"{type(widget).__name__} {{ border: 2px solid green }}" if on else ""
+            )
         overridden = f"the {self.rule_domain} rule" if self.rule_dir else "the yt-dlp config"
         self.dir_edit.setToolTip(
             f"Overriding {overridden}. Clear the field to follow it."
@@ -450,9 +505,11 @@ class MainWindow(QMainWindow):
         old = self.rules.get(domain, {}).get("--paths")
         if old and old != new:
             answer = QMessageBox.question(
-                self, app.APP_TITLE,
+                self,
+                app.APP_TITLE,
                 f"Replace the download folder for {domain}?\n\n"
-                f"{ytdlp_config.to_display_path(str(old))}\n→ {directory}")
+                f"{ytdlp_config.to_display_path(str(old))}\n→ {directory}",
+            )
             if answer != QMessageBox.StandardButton.Yes:
                 return
         rules = dict(self.rules)
@@ -484,7 +541,8 @@ class MainWindow(QMainWindow):
         # self.rule already matches the URL: _url_changed runs on every edit.
         extra = overrides.rule_argv(self.rule)
         job = DownloadJob(
-            self.binary_path, argv.build_argv(url, directory, cookies, extra), url, parent=self)
+            self.binary_path, argv.build_argv(url, directory, cookies, extra), url, parent=self
+        )
         self._add_row(job)
         job.state_changed.connect(lambda s, j=job: self._on_state(j, s))
         job.file_named.connect(lambda f, j=job: self._set(j, C_FILE, os.path.basename(f)))
@@ -518,10 +576,10 @@ class MainWindow(QMainWindow):
             self.table.setItem(row, col, QTableWidgetItem(""))
         self._on_state(job, job.state)
         url = urlparse(job.url)
-        self.table.item(row, C_SCHEME).setText(url.scheme)
-        self.table.item(row, C_HOST).setText(url.netloc)
-        self.table.item(row, C_PATH).setText(url._replace(scheme="", netloc="").geturl())
-        self.table.item(row, C_PATH).setToolTip(job.url)
+        self._item(row, C_SCHEME).setText(url.scheme)
+        self._item(row, C_HOST).setText(url.netloc)
+        self._item(row, C_PATH).setText(url._replace(scheme="", netloc="").geturl())
+        self._item(row, C_PATH).setToolTip(job.url)
 
         bar = QProgressBar()
         bar.setRange(0, 0)  # indeterminate until the first progress line
@@ -546,25 +604,31 @@ class MainWindow(QMainWindow):
     def _row(self, job: DownloadJob) -> int:
         return self.jobs.index(job)
 
+    def _item(self, row: int, col: int) -> QTableWidgetItem:
+        item = self.table.item(row, col)
+        assert item is not None  # _add_row fills every cell
+        return item
+
     def _set(self, job: DownloadJob, col: int, text: str) -> None:
-        self.table.item(self._row(job), col).setText(text)
+        self._item(self._row(job), col).setText(text)
 
     def _on_state(self, job: DownloadJob, state: JobState) -> None:
         self._set(job, C_STATUS, state.value)
         icon = self.style().standardIcon(STATE_ICONS[state])
-        self.table.item(self._row(job), C_ICON).setIcon(icon)
+        self._item(self._row(job), C_ICON).setIcon(icon)
 
     def _on_metadata(self, job: DownloadJob, fields: list[str]) -> None:
         row = self._row(job)
-        for col, text in zip(META_COLUMNS, fields):
-            self.table.item(row, col).setText(text)
+        for col, text in zip(META_COLUMNS, fields, strict=False):
+            self._item(row, col).setText(text)
 
     def _on_progress(self, job: DownloadJob, p: Progress) -> None:
         row = self._row(job)
-        self.table.item(row, C_DOWN).setText(format_bytes(p.downloaded))
-        self.table.item(row, C_TOTAL).setText(format_bytes(p.total))
-        self.table.item(row, C_SPEED).setText(f"{format_bytes(p.speed)}/s" if p.speed else "")
-        bar: QProgressBar = self.table.cellWidget(row, C_PROG)
+        self._item(row, C_DOWN).setText(format_bytes(p.downloaded))
+        self._item(row, C_TOTAL).setText(format_bytes(p.total))
+        self._item(row, C_SPEED).setText(f"{format_bytes(p.speed)}/s" if p.speed else "")
+        bar = self.table.cellWidget(row, C_PROG)
+        assert isinstance(bar, QProgressBar)
         if p.percent is None:
             bar.setRange(0, 0)
         else:
@@ -574,10 +638,10 @@ class MainWindow(QMainWindow):
     def _on_finished(self, job: DownloadJob) -> None:
         row = self._row(job)
         self.table.removeCellWidget(row, C_PROG)
-        self.table.item(row, C_SPEED).setText("")
+        self._item(row, C_SPEED).setText("")
         if job.state is JobState.FAILED:
-            self.table.item(row, C_FILE).setText(job.error_text)
-            self.table.item(row, C_FILE).setToolTip("\n".join(job.log[-20:]))
+            self._item(row, C_FILE).setText(job.error_text)
+            self._item(row, C_FILE).setToolTip("\n".join(job.log[-20:]))
         # Clear, and Open once there is a file to open.
         clear = self._tool_button(SP.SP_TrashIcon, "Remove from list", lambda: self._remove(job))
         buttons = [clear]

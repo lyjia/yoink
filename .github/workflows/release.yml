@@ -1,0 +1,179 @@
+# Release build: Linux, Windows, and macOS artifacts for a v<M>.<m>.<p> tag.
+#
+# Triggers:
+#   - pushing a release tag (v*.*.*)  -> build all platforms and upload them
+#     to a DRAFT GitHub Release for the tag. Nothing is public until a
+#     maintainer tests the artifacts and clicks Publish (docs/RELEASING.md).
+#   - workflow_dispatch with a tag    -> same, for re-running a release
+#   - workflow_dispatch with a branch -> build + smoke test only (no publish);
+#     use this to test packaging changes before tagging
+#
+# Lint + test CI stays on Woodpecker (.woodpecker/test.yaml). Release
+# artifacts are uploaded as *release assets*, not Actions artifacts, so the
+# Actions storage cap does not apply. Standard runners are free for public
+# repos.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag to build and publish (e.g. v0.1.0), or a branch to build without publishing"
+        required: true
+        type: string
+
+permissions:
+  contents: write   # lets the built-in GITHUB_TOKEN create/edit the release
+
+env:
+  REF: ${{ inputs.ref || github.ref_name }}
+
+jobs:
+  # Resolves the version once and, for tags, creates the draft release
+  # before the platform builds run, so parallel uploads never race to
+  # create it (GitHub allows duplicate drafts for one tag).
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      publish: ${{ steps.meta.outputs.publish }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+          # Full history + tags: uv-dynamic-versioning reads the version from
+          # git tags. A shallow clone would mis-stamp the version.
+          fetch-depth: 0
+
+      - name: Set up uv and Python 3.12
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Resolve version and publish mode
+        id: meta
+        run: |
+          VER=$(uv run python -c "import yoink; print(yoink.__version__)")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Build will stamp version: $VER"
+          if git show-ref --verify --quiet "refs/tags/$REF"; then
+            # Never publish a non-release build: on a tag the version must be bare M.m.p.
+            case "$VER" in
+              *+*|*dirty*)
+                echo "::error::Version '$VER' is not a clean release build for tag $REF."
+                exit 1 ;;
+            esac
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$REF is not a tag; building and testing without publishing."
+          fi
+
+      - name: Create the draft release
+        if: steps.meta.outputs.publish == 'true'
+        env:
+          GITHUB_RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run --no-project python scripts/release_upload.py --repo "${{ github.repository }}" --tag "$REF"
+
+  build:
+    name: build (${{ matrix.platform }}-${{ matrix.arch }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 (glibc 2.35) so the binaries run on older distros too.
+          - platform: linux
+            arch: x64
+            os: ubuntu-22.04
+            exe: dist/yoink.dist/yoink
+          # 24.04 (glibc 2.39): PySide6's aarch64 wheels require it, so the
+          # arm64 binaries need a glibc 2.39+ distro (e.g. Ubuntu 24.04,
+          # Debian 13, Fedora 40).
+          - platform: linux
+            arch: arm64
+            os: ubuntu-24.04-arm
+            exe: dist/yoink.dist/yoink
+          - platform: windows
+            arch: x64
+            os: windows-latest
+            exe: dist/yoink.dist/yoink.exe
+          # macos-14 is Apple Silicon -> arm64.
+          - platform: macos
+            arch: arm64
+            os: macos-14
+            exe: dist/yoink.app/Contents/MacOS/yoink
+          # macos-15-intel is the last Intel runner: macos-13 was retired in
+          # December 2025, and GitHub ends Intel macOS runners in fall 2027.
+          - platform: macos
+            arch: x64
+            os: macos-15-intel
+            exe: dist/yoink.app/Contents/MacOS/yoink
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+          # Full history + tags: uv-dynamic-versioning reads the version from
+          # git tags. A shallow clone would mis-stamp the version.
+          fetch-depth: 0
+
+      - name: Set up uv and Python 3.12
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      # Nuitka needs patchelf on Linux; the Qt libraries let the smoke test
+      # start the app on a runner with no display.
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends patchelf \
+            libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0
+
+      # --release (zip, bare M.m.p only) on a tag. A branch build carries a
+      # +N.<hash> version, which --release refuses, so it gets a plain build.
+      - name: Build
+        run: scripts/build.sh ${{ needs.prepare.outputs.publish == 'true' && '--release' || '' }}
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Smoke test
+        run: uv run --no-project python scripts/smoke_test.py "${{ matrix.exe }}"
+
+      - name: Upload to the draft GitHub Release
+        if: needs.prepare.outputs.publish == 'true'
+        env:
+          GITHUB_RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run --no-project python scripts/release_upload.py --repo "${{ github.repository }}" --tag "$REF" dist/yoink-*.zip
+
+  # After every platform has uploaded, publish SHA256SUMS.txt built from the
+  # digests GitHub records for each asset (nothing is re-downloaded).
+  checksums:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+
+      - name: Set up uv and Python 3.12
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Publish SHA256SUMS.txt
+        env:
+          GITHUB_RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run --no-project python scripts/release_upload.py --repo "${{ github.repository }}" --tag "$REF" --checksums

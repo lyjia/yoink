@@ -3,7 +3,7 @@ import pytest
 from yoink import overrides
 from yoink.overrides import load_rules, match, normalize_domain, rule_argv, rule_lines, save_rules
 
-RULES = {"youtube.com": {}, "m.youtube.com": {}, "example.org": {}}
+RULES: dict[str, dict] = {"youtube.com": {}, "m.youtube.com": {}, "example.org": {}}
 
 
 @pytest.mark.parametrize(
@@ -48,7 +48,10 @@ def test_load_malformed_file(tmp_path, caplog, text):
     ("data", "expected"),
     [
         ({"youtube.com": "D:/v", "a.com": {}}, {"a.com": {}}),  # a rule that isn't an object
-        ({"youtube.com": {"--paths": "D:/v", "--limit-rate": 5}}, {"youtube.com": {"--paths": "D:/v"}}),
+        (
+            {"youtube.com": {"--paths": "D:/v", "--limit-rate": 5}},
+            {"youtube.com": {"--paths": "D:/v"}},
+        ),
         ({"": {"--paths": "D:/v"}, " . ": {}, "a.com": {}}, {"a.com": {}}),  # no domain
     ],
 )
@@ -82,4 +85,6 @@ def test_rule_argv():
 
 def test_rule_lines():
     assert rule_lines({"--paths": "D:/v", "--embed-subs": True, "--write-subs": False}) == [
-        "--paths D:/v", "--embed-subs"]
+        "--paths D:/v",
+        "--embed-subs",
+    ]
