@@ -1,9 +1,0 @@
-# Install once per clone: uv run pre-commit install
-repos:
-  - repo: local
-    hooks:
-      - id: ruff
-        name: ruff (fix, format, re-stage)
-        entry: uv run python scripts/precommit_ruff.py
-        language: system
-        types_or: [python, pyi]

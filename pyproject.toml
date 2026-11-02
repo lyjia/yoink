@@ -42,7 +42,6 @@ dev = [
     "mypy",
     "nuitka>=4.3.1",
     "pillow>=13.0.0",
-    "pre-commit",
     "pytest",
     "ruff",
 ]
