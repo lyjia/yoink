@@ -562,7 +562,9 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             f"About {app.APP_TITLE}",
-            f"{app.APP_TITLE} {VERSION_LABEL}\nA small front end for yt-dlp.\n\n"
+            f"{app.APP_TITLE} {VERSION_LABEL}\nA small front end for yt-dlp.\n"
+            f"©2026 Lyjia / Tom Corelis.\n\n"
+            f"Yoink! is FREE and licensed to you under the terms of the AGPLv3.\n\n"
             f"yt-dlp: {self.binary_path or 'not found'}",
         )
 

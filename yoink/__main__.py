@@ -1,6 +1,7 @@
 import logging
 import sys
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from yoink import VERSION_LABEL, app
@@ -13,6 +14,7 @@ def main() -> int:
     qapp = QApplication(sys.argv)
     qapp.setOrganizationName(app.ORG_NAME)
     qapp.setApplicationName(app.APP_NAME)
+    qapp.setWindowIcon(QIcon(str(app.ICON_PATH)))
     app.apply_style(str(app.settings().value(app.KEY_STYLE, "")))
     win = MainWindow()
     win.show()

@@ -20,13 +20,18 @@ done
 # app-dist is a standalone folder, or a .app bundle on macOS. Windows attaches
 # to the launching terminal so logging is visible.
 case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*) os=windows; extra="--windows-console-mode=attach"; out=dist/yoink.dist/yoink.exe ;;
-    Darwin) os=macos; extra="--macos-app-name=Yoink"; out=dist/yoink.app ;;
+    MINGW*|MSYS*|CYGWIN*) os=windows; extra="--windows-console-mode=attach --windows-icon-from-ico=dist/icons/yoink.ico"; out=dist/yoink.dist/yoink.exe ;;
+    Darwin) os=macos; extra="--macos-app-name=Yoink --macos-app-icon=dist/icons/yoink.icns"; out=dist/yoink.app ;;
     *) os=linux; extra=""; out=dist/yoink.dist/yoink ;;
 esac
 
 # Reinstall so the version metadata matches HEAD and the tree's dirty state.
 uv sync --reinstall-package yoink
+
+# Icons from docs/icon-1254.png: yoink/icon.png (window icon, committed) and
+# the per-OS binary icons under dist/icons/. Runs before the version check so
+# a stale committed icon.png makes a --release build refuse as dirty.
+uv run python scripts/make_icons.py
 version=$(uv run python -c "import yoink; print(yoink.__version__, end='')")
 if (( release )) && ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Refusing --release: version $version is not a clean tag (need a clean tree on a v* tag)." >&2
@@ -37,7 +42,7 @@ fi
 # test build doesn't need it. $extra is unquoted on purpose: it may be empty.
 # shellcheck disable=SC2086
 uv run python -m nuitka --mode=app-dist --enable-plugin=pyside6 --lto=no \
-    --include-distribution-metadata=yoink \
+    --include-distribution-metadata=yoink --include-data-files=yoink/icon.png=yoink/icon.png \
     --output-dir=dist --assume-yes-for-downloads $extra "$@" yoink
 
 echo "Built $version: $PWD/$out"
