@@ -21,7 +21,7 @@ one of the following:
 Requires Python 3.11+ and a `yt-dlp` executable on PATH.
 
 ```
-pip install -e .
+uv sync
 python -m yoink
 ```
 
