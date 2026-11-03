@@ -1,5 +1,5 @@
 # Yoink!
-
+<img src="https://raw.githubusercontent.com/lyjia/yoink/refs/heads/master/docs/icon-1254.png" width="512">
 A small GUI front-end for yt-dlp. (yt-dlp not included)
 
 ## Download
