@@ -158,7 +158,7 @@ is backlog.
 
 ### 2.5 Downloads table
 
-One row per download. The columns, in order: status icon, Status, Scheme,
+One row per download. The columns, in order: status icon, ID, Status, Scheme,
 Host, Path, Filename, Downloaded, Total, Speed, Progress, Title, Uploader,
 Duration, Resolution, Upload date, and the row's buttons. Scheme and the
 five metadata columns (Title to Upload date, from the META line in 2.2)
