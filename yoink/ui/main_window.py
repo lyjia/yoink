@@ -244,6 +244,8 @@ class MainWindow(QMainWindow):
             action.setCheckable(True)
             action.toggled.connect(lambda on, c=col: hdr.setSectionHidden(c, not on))
             self.column_actions.append(action)
+        view_menu.addSeparator()
+        view_menu.addAction("Clear Download Log", self.clear_log)
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction("Set up yt-dlp…", self.show_setup)
         help_menu.addAction("About", self._about)
@@ -556,6 +558,11 @@ class MainWindow(QMainWindow):
 
     def clear_finished(self) -> None:
         for job in [j for j in self.jobs if j.state.terminal]:
+            self._remove(job)
+
+    def clear_log(self) -> None:
+        for job in list(self.jobs):
+            job.cancel()
             self._remove(job)
 
     def _about(self) -> None:
