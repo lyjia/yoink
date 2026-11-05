@@ -1,5 +1,6 @@
 """Main window: URL input, override controls, and the downloads table."""
 
+import itertools
 import logging
 import os
 import re
@@ -44,6 +45,7 @@ log = logging.getLogger(__name__)
 
 COLUMNS = [
     "",
+    "ID",
     "Status",
     "Scheme",
     "Host",
@@ -62,6 +64,7 @@ COLUMNS = [
 ]
 (
     C_ICON,
+    C_ID,
     C_STATUS,
     C_SCHEME,
     C_HOST,
@@ -127,7 +130,10 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.settings = app.settings()
-        self.jobs: list[DownloadJob] = []  # index == table row
+        self.jobs: list[DownloadJob] = []  # in request order
+        # Each job's ID item; its row() follows the row when the table is sorted.
+        self.rows: dict[DownloadJob, QTableWidgetItem] = {}
+        self.job_ids = itertools.count(1)
         self.binary_path = binary.find_binary(self.settings.value(app.KEY_BINARY_PATH))
         # Last config probe result (docs/PHASE1.md 1.1); None until it succeeds.
         self.loaded_configs: list[ytdlp_config.LoadedConfig] | None = None
@@ -214,6 +220,7 @@ class MainWindow(QMainWindow):
         self.table.resizeColumnsToContents()
         for col, width in {
             C_ICON: 28,
+            C_ID: 40,
             C_STATUS: 80,
             C_HOST: 100,
             C_PATH: 180,
@@ -228,6 +235,7 @@ class MainWindow(QMainWindow):
         for col in HIDDEN:
             hdr.setSectionHidden(col, True)
         self._default_header = hdr.saveState()
+        self.table.setSortingEnabled(True)
         root.addWidget(self.table, 1)
 
         file_menu = self.menuBar().addMenu("&File")
@@ -571,11 +579,14 @@ class MainWindow(QMainWindow):
     # ---- table plumbing ---------------------------------------------------
 
     def _add_row(self, job: DownloadJob) -> None:
+        self.table.setSortingEnabled(False)  # so `row` stays put while filling it
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.jobs.append(job)
         for col in range(len(COLUMNS)):
             self.table.setItem(row, col, QTableWidgetItem(""))
+        self.rows[job] = self._item(row, C_ID)
+        self.rows[job].setData(Qt.ItemDataRole.DisplayRole, next(self.job_ids))  # sorts as a number
         self._on_state(job, job.state)
         url = urlparse(job.url)
         self._item(row, C_SCHEME).setText(url.scheme)
@@ -590,6 +601,7 @@ class MainWindow(QMainWindow):
 
         cancel = self._tool_button(SP.SP_BrowserStop, "Cancel", job.cancel)
         self.table.setCellWidget(row, C_ACTION, side_by_side(cancel, stretch=None))
+        self.table.setSortingEnabled(True)
 
     def _tool_button(self, icon: QStyle.StandardPixmap, tip: str, slot: Callable) -> QToolButton:
         button = QToolButton()
@@ -602,15 +614,17 @@ class MainWindow(QMainWindow):
     def _remove(self, job: DownloadJob) -> None:
         self.table.removeRow(self._row(job))
         self.jobs.remove(job)
+        del self.rows[job]
 
     def _row(self, job: DownloadJob) -> int:
-        return self.jobs.index(job)
+        return self.rows[job].row()
 
     def _item(self, row: int, col: int) -> QTableWidgetItem:
         item = self.table.item(row, col)
         assert item is not None  # _add_row fills every cell
         return item
 
+    # Setting text re-sorts a table sorted by that column, so these look the row up each time.
     def _set(self, job: DownloadJob, col: int, text: str) -> None:
         self._item(self._row(job), col).setText(text)
 
@@ -620,16 +634,14 @@ class MainWindow(QMainWindow):
         self._item(self._row(job), C_ICON).setIcon(icon)
 
     def _on_metadata(self, job: DownloadJob, fields: list[str]) -> None:
-        row = self._row(job)
         for col, text in zip(META_COLUMNS, fields, strict=False):
-            self._item(row, col).setText(text)
+            self._set(job, col, text)
 
     def _on_progress(self, job: DownloadJob, p: Progress) -> None:
-        row = self._row(job)
-        self._item(row, C_DOWN).setText(format_bytes(p.downloaded))
-        self._item(row, C_TOTAL).setText(format_bytes(p.total))
-        self._item(row, C_SPEED).setText(f"{format_bytes(p.speed)}/s" if p.speed else "")
-        bar = self.table.cellWidget(row, C_PROG)
+        self._set(job, C_DOWN, format_bytes(p.downloaded))
+        self._set(job, C_TOTAL, format_bytes(p.total))
+        self._set(job, C_SPEED, f"{format_bytes(p.speed)}/s" if p.speed else "")
+        bar = self.table.cellWidget(self._row(job), C_PROG)
         assert isinstance(bar, QProgressBar)
         if p.percent is None:
             bar.setRange(0, 0)
@@ -638,12 +650,11 @@ class MainWindow(QMainWindow):
             bar.setValue(p.percent)
 
     def _on_finished(self, job: DownloadJob) -> None:
-        row = self._row(job)
-        self.table.removeCellWidget(row, C_PROG)
-        self._item(row, C_SPEED).setText("")
+        self.table.removeCellWidget(self._row(job), C_PROG)
+        self._set(job, C_SPEED, "")
         if job.state is JobState.FAILED:
-            self._item(row, C_FILE).setText(job.error_text)
-            self._item(row, C_FILE).setToolTip("\n".join(job.log[-20:]))
+            self._set(job, C_FILE, job.error_text)
+            self._item(self._row(job), C_FILE).setToolTip("\n".join(job.log[-20:]))
         # Clear, and Open once there is a file to open.
         clear = self._tool_button(SP.SP_TrashIcon, "Remove from list", lambda: self._remove(job))
         buttons = [clear]
@@ -654,7 +665,7 @@ class MainWindow(QMainWindow):
             menu.addAction("Open folder", lambda: open_path(os.path.dirname(path)))
             open_.setMenu(menu)
             buttons.append(open_)
-        self.table.setCellWidget(row, C_ACTION, side_by_side(*buttons, stretch=None))
+        self.table.setCellWidget(self._row(job), C_ACTION, side_by_side(*buttons, stretch=None))
 
     # ---- lifecycle --------------------------------------------------------
 
